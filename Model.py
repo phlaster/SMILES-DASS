@@ -5,63 +5,100 @@ from tqdm import tqdm
 import numpy as np
 import tifffile
 
-class SimplePerceptron(nn.Module):
+class CNN(nn.Module):
     def __init__(self, input_channels, hidden_layers, num_classes = 5):
-        super(SimplePerceptron, self).__init__()
+        super(CNN, self).__init__()
         layers = []
         layers.append(nn.Conv2d(input_channels, hidden_layers[0], kernel_size=5, padding=2))
         layers.append(nn.ReLU())
         for i in range(1, len(hidden_layers)):
             layers.append(nn.Conv2d(hidden_layers[i-1], hidden_layers[i], kernel_size=3, padding=1))
             layers.append(nn.ReLU())
-        layers.append(nn.Conv2d(hidden_layers[-1], num_classes, kernel_size=3, padding=1))
+        layers.append(nn.Conv2d(hidden_layers[-1], num_classes, kernel_size=1, padding=0))
         self.model = nn.Sequential(*layers)
 
+    def _get_device(self):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Device: {device}")
+        return device
+    
     def forward(self, x):
         return self.model(x)
     
     def train(self, train_loader, val_loader, num_epochs, learning_rate):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Device: {device}")
+        device = self._get_device()
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
         self.model.to(device)
 
         for epoch in range(num_epochs):
-            self.model.train()
-            running_loss = 0.0
-            for images, masks in tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}', leave=False):
-                images, masks = images.to(device), masks.to(device).long()
+            self._train_epoch(epoch, num_epochs, train_loader, optimizer, criterion, device)
+            self._validate_epoch(epoch, num_epochs, val_loader, criterion, device)
 
-                optimizer.zero_grad()
+    def _train_epoch(self, epoch, num_epochs, train_loader, optimizer, criterion, device):
+        self.model.train()
+        running_loss = 0.0
+        for images, masks in tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}', leave=False):
+            images, masks = images.to(device), masks.to(device).long()
+
+            optimizer.zero_grad()
+            outputs = self.model(images)
+            loss = criterion(outputs, masks)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+
+        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader)}')
+
+    def _validate_epoch(self, epoch, num_epochs, val_loader, criterion, device):
+        self.model.eval()
+        val_loss = 0.0
+        val_accuracy = 0.0
+        total_samples = 0
+        all_masks = []
+        all_predictions = []
+        with torch.no_grad():
+            for images, masks in tqdm(val_loader, desc=f'Epoch {epoch+1}/{num_epochs}', leave=False):
+                images, masks = images.to(device), masks.to(device).long()
                 outputs = self.model(images)
                 loss = criterion(outputs, masks)
-                loss.backward()
-                optimizer.step()
+                val_loss += loss.item()
 
-                running_loss += loss.item()
+                _, predicted = torch.max(outputs.data, 1)
+                total_samples += masks.nelement()
 
-            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader)}')
+                all_masks.append(masks.cpu().numpy())
+                all_predictions.append(predicted.cpu().numpy())
 
-            self.model.eval()
-            val_loss = 0.0
-            val_accuracy = 0.0
-            total_samples = 0
-            correct_predictions = 0
-            with torch.no_grad():
-                for images, masks in tqdm(val_loader, desc=f'Epoch {epoch+1}/{num_epochs}', leave=False):
-                    images, masks = images.to(device), masks.to(device).long()
-                    outputs = self.model(images)
-                    loss = criterion(outputs, masks)
-                    val_loss += loss.item()
+        all_masks = np.concatenate(all_masks)
+        all_predictions = np.concatenate(all_predictions)
+        class_scores = self.match_scores(all_masks, all_predictions)
+        print(f'Validation Loss: {val_loss/len(val_loader)}')
+        acc = 0.0
+        for class_name, accuracy in class_scores.items():
+            acc += accuracy
+            print(f'\tClass: {class_name}, Accuracy score: {accuracy:.2f}%')
+        print(f"\tMean accuracy: {acc/len(class_scores):.2f}%")
 
-                    _, predicted = torch.max(outputs.data, 1)
-                    total_samples += masks.nelement()
-                    correct_predictions += (predicted == masks).sum().item()
+    def match_scores(self, mask_raw, prediction):
+        class_scores = {}
+        class_names = ["open water", "settlements", "bare soil", "forest", "grassland"]
 
-            val_accuracy = 100 * correct_predictions / total_samples
-            print(f'Validation Loss: {val_loss/len(val_loader)}, Validation Accuracy: {val_accuracy:.2f}%')
+        for i in range(5):
+            cls_mask = mask_raw == i
+            cls_prediction = prediction == i
+
+            correct_pixels = np.sum(cls_mask & cls_prediction)
+            total_pixels = np.sum(cls_mask)
+
+            if total_pixels > 0:
+                correct_percentage = (correct_pixels / total_pixels) * 100
+            else:
+                correct_percentage = 0
+            class_scores[class_names[i]] = correct_percentage
+        return class_scores
             
     def _preprocess_image(self, image_path, target_size=512):
         image = tifffile.imread(image_path)
@@ -103,7 +140,7 @@ class SimplePerceptron(nn.Module):
         self.model.eval()
         print("model loaded")
 
-def load_perceptron(pickle_path):
+def CNN_load(pickle_path):
     state_dict = torch.load(pickle_path)
     input_channels = state_dict['0.weight'].size(1)
     layers = [
@@ -113,7 +150,7 @@ def load_perceptron(pickle_path):
     
     num_classes = layers.pop()
 
-    model = SimplePerceptron(input_channels, layers, num_classes)
+    model = CNN(input_channels, layers, num_classes)
     model.unpickle(pickle_path)
     print(model)
     return model
