@@ -6,15 +6,8 @@ import numpy as np
 import tifffile
 
 class CNN(nn.Module):
-    def __init__(self, input_channels, hidden_layers, num_classes = 5):
+    def __init__(self, layers):
         super(CNN, self).__init__()
-        layers = []
-        layers.append(nn.Conv2d(input_channels, hidden_layers[0], kernel_size=5, padding=2))
-        layers.append(nn.ReLU())
-        for i in range(1, len(hidden_layers)):
-            layers.append(nn.Conv2d(hidden_layers[i-1], hidden_layers[i], kernel_size=3, padding=1))
-            layers.append(nn.ReLU())
-        layers.append(nn.Conv2d(hidden_layers[-1], num_classes, kernel_size=1, padding=0))
         self.model = nn.Sequential(*layers)
 
     def _get_device(self):
