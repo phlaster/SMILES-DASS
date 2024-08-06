@@ -152,7 +152,7 @@ def compare_prediction(img_path, mask_path, prediction, r=3, g=2, b=1):
         ax4.barh(cls, score['correct'], color=class_colors[cls])
         ax4.text(score['correct'], cls, f"{score['correct']:.2f}%", va='center')
     
-    ax4.set_title('Correctness Scores')
+    ax4.set_title('Accuracy Scores')
     ax4.set_xlim(0, 100)
     ax4.set_yticks(list(class_scores.keys()))
     ax4.set_yticklabels([f'{cls}' for cls in class_scores.keys()])
