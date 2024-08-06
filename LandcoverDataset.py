@@ -1,4 +1,6 @@
 from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
+
 import os
 import pandas as pd
 import numpy as np
@@ -46,9 +48,11 @@ class LandcoverDataset(Dataset):
         name = choice(self.file_names)
         img_name = f"{self.img_path}/{name}.tif"
         mask_name = f"{self.mask_path}/{name}.tif"
-        
         return img_name, mask_name
         
+    def load_data(self, batch_size, shuffle=True):
+        return DataLoader(self, batch_size=batch_size, shuffle=shuffle)
+    
     @staticmethod
     def filenames_in_dir(img_path):
         name = []
