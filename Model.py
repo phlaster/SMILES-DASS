@@ -9,14 +9,15 @@ class CNN(nn.Module):
     def __init__(self, layers):
         super(CNN, self).__init__()
         self.model = nn.Sequential(*layers)
+        print(self.model)
 
+    def forward(self, x):
+        return self.model(x)
+    
     def _get_device(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Device: {device}")
         return device
-    
-    def forward(self, x):
-        return self.model(x)
     
     def train(self, train_loader, val_loader, num_epochs, learning_rate):
         device = self._get_device()
@@ -24,74 +25,62 @@ class CNN(nn.Module):
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
         self.model.to(device)
-
+        train_story = {
+            "train_loss": [],
+            "val_loss": [],
+            "val_accuracy": [],
+            "mean_accuracy": []
+        }
         for epoch in range(num_epochs):
-            self._train_epoch(epoch, num_epochs, train_loader, optimizer, criterion, device)
-            self._validate_epoch(epoch, num_epochs, val_loader, criterion, device)
-
+            train_story["train_loss"].append(
+                self._train_epoch(epoch, num_epochs, train_loader, optimizer, criterion, device)
+            )
+            val_loss, accuracy_scores = self._validate_epoch(epoch, num_epochs, val_loader, criterion, device)
+            train_story["val_loss"].append(val_loss)
+            train_story["val_accuracy"].append(accuracy_scores)
+            train_story["mean_accuracy"].append(np.mean(accuracy_scores))
+        return train_story
+    
     def _train_epoch(self, epoch, num_epochs, train_loader, optimizer, criterion, device):
         self.model.train()
         running_loss = 0.0
-        for images, masks in tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}', leave=False):
-            images, masks = images.to(device), masks.to(device).long()
-
+        for images, masks in tqdm(train_loader, desc=f'Train {epoch+1}/{num_epochs}'):
+            images, masks = images.to(device), masks.to(device)
             optimizer.zero_grad()
             outputs = self.model(images)
             loss = criterion(outputs, masks)
             loss.backward()
             optimizer.step()
-
             running_loss += loss.item()
-
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader)}')
+        epoch_loss = round(running_loss/len(train_loader), 2)
+        print(f'Epoch [{epoch+1}/{num_epochs}], Train loss: {epoch_loss}', end="")
+        return epoch_loss
 
     def _validate_epoch(self, epoch, num_epochs, val_loader, criterion, device):
         self.model.eval()
-        val_loss = 0.0
-        val_accuracy = 0.0
-        total_samples = 0
-        all_masks = []
-        all_predictions = []
+        running_loss = 0.0
+        num_classes = 5
+        class_correct = [0] * num_classes
+        class_total = [0] * num_classes
+
         with torch.no_grad():
-            for images, masks in tqdm(val_loader, desc=f'Epoch {epoch+1}/{num_epochs}', leave=False):
-                images, masks = images.to(device), masks.to(device).long()
+            for images, masks in tqdm(val_loader, desc=f'Validate {epoch+1}/{num_epochs}'):
+                images, masks = images.to(device), masks.to(device)
                 outputs = self.model(images)
                 loss = criterion(outputs, masks)
-                val_loss += loss.item()
+                running_loss += loss.item()
 
-                _, predicted = torch.max(outputs.data, 1)
-                total_samples += masks.nelement()
+                _, predicted = torch.max(outputs, 1)
+                for class_id in range(num_classes):
+                    class_mask = (masks == class_id)
+                    class_correct[class_id] += (predicted[class_mask] == class_id).sum().item()
+                    class_total[class_id] += class_mask.sum().item()
 
-                all_masks.append(masks.cpu().numpy())
-                all_predictions.append(predicted.cpu().numpy())
-
-        all_masks = np.concatenate(all_masks)
-        all_predictions = np.concatenate(all_predictions)
-        class_scores = self.match_scores(all_masks, all_predictions)
-        print(f'Validation Loss: {val_loss/len(val_loader)}')
-        acc = 0.0
-        for class_name, accuracy in class_scores.items():
-            acc += accuracy
-            print(f'\tClass: {class_name}, Accuracy score: {accuracy:.2f}%')
-        print(f"\tMean accuracy: {acc/len(class_scores):.2f}%")
-
-    def match_scores(self, mask_raw, prediction):
-        class_scores = {}
-        class_names = ["open water", "settlements", "bare soil", "forest", "grassland"]
-
-        for i in range(5):
-            cls_mask = mask_raw == i
-            cls_prediction = prediction == i
-
-            correct_pixels = np.sum(cls_mask & cls_prediction)
-            total_pixels = np.sum(cls_mask)
-
-            if total_pixels > 0:
-                correct_percentage = (correct_pixels / total_pixels) * 100
-            else:
-                correct_percentage = 0
-            class_scores[class_names[i]] = correct_percentage
-        return class_scores
+        val_loss = round(running_loss / len(val_loader), 2)
+        accuracy_scores = np.divide(class_correct, class_total, out=np.zeros_like(class_correct, dtype=float), where=class_total != 0)
+        print(f'Epoch [{epoch+1}/{num_epochs}], Val loss: {val_loss}, Accuracy: {accuracy_scores}', end="")
+        return val_loss, accuracy_scores
+        
             
     def _preprocess_image(self, image_path, target_size=512):
         image = tifffile.imread(image_path)

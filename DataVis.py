@@ -84,7 +84,7 @@ def match_scores(
     return class_scores
 
 
-def compare_prediction(img_path, mask_path, prediction, r=3, g=2, b=1):    
+def compare_prediction(img_path, mask_path, prediction):    
     fig = plt.figure(figsize=(24, 12))
 
     gs = fig.add_gridspec(1, 4)
@@ -97,7 +97,7 @@ def compare_prediction(img_path, mask_path, prediction, r=3, g=2, b=1):
     pal = [value for color in PALLETE for value in color]
     
     # 1
-    _, img = convert_old(img_path, r=r, g=g, b=b)
+    _, img = convert_old(img_path)
     ax1.imshow(img)
     ax1.set_title('Original Image')
     ax1.axis('off')
