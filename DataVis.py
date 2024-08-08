@@ -17,25 +17,26 @@ PALLETE = [
     [255, 230, 166],
     [150, 77, 255]
 ]
+CLASSES = ["open water", "settlements", "bare soil", "forest", "grassland"]
 
 def normalize(band):
-    band_min, band_max = (band.min(), band.max())
-    return ((band - band_min) / ((band_max - band_min)))
+    return (band - band.min()) / (band.max() - band.min() + 1e-8)
     
-def brighten(band):
-    alpha = 0.13
-    beta = 0
-    return np.clip(alpha * band + beta, 0, 255)
+def brighten(band, a=2.0, b=0.25):
+    return np.clip(a * band + b, 0.0, 1.0)
 
-def convert(im_path, r=3, g=2, b=1):
+def decode_one_hot(one_hot_mask):
+    return np.argmax(one_hot_mask, axis=-1).astype('uint8')
+
+def convert_old(im_path, r=3, g=2, b=1):
     with rasterio.open(im_path) as fin:
         red = fin.read(r)
         green = fin.read(g)
         blue = fin.read(b)
 
-    red_b = brighten(red)
-    blue_b = brighten(blue)
-    green_b = brighten(green)
+    red_b = brighten(red, a=0.13, b=0)
+    blue_b = brighten(blue, a=0.13, b=0)
+    green_b = brighten(green, a=0.13, b=0)
 
     red_bn = normalize(red_b)
     green_bn = normalize(green_b)
@@ -48,7 +49,7 @@ def plot_data(image_path, mask_path, r=3, g=2, b=1):
     pal = [value for color in PALLETE for value in color]
     
     plt.subplot(1, 2, 1)
-    _, img = convert(image_path, r=r, g=g, b=b)
+    _, img = convert_old(image_path, r=r, g=g, b=b)
     plt.imshow(img)
 
     plt.subplot(1, 2, 2)
@@ -59,33 +60,16 @@ def plot_data(image_path, mask_path, r=3, g=2, b=1):
     
     plt.show();
 
-
-def peek_dataset(ds, r=3, g=2, b=1):
-    name = choice(ds.filenames_in_dir(ds.img_path))
-    img_path = f"{ds.img_path}/{name}.tif"
-    mask_path = f"{ds.mask_path}/{name}.tif"
-    
-    plt.figure(figsize=(12, 12))
-    pal = [value for color in PALLETE for value in color]
-    
-    plt.subplot(1, 2, 1)
-    _, img = convert(img_path, r=r, g=g, b=b)
-    plt.imshow(img)
-
-    plt.subplot(1, 2, 2)
-    mask = tifffile.imread(mask_path)
-    mask = Image.fromarray(mask).convert('P')
-    mask.putpalette(pal)
-    plt.imshow(mask)    
-    
-    plt.show();
     
 
-def match_scores(mask_raw, prediction):
+def match_scores(
+    mask_raw,
+    prediction,
+    classes=CLASSES
+):
     class_scores = {}
-    class_names = ["open water", "settlements", "bare soil", "forest", "grassland"]
     
-    for i in range(5):
+    for i in range(len(classes)):
         cls_mask = mask_raw == i
         cls_prediction = prediction == i
         
@@ -96,36 +80,29 @@ def match_scores(mask_raw, prediction):
             correct_percentage = (correct_pixels / total_pixels) * 100
         else:
             correct_percentage = 0
-        
-        class_scores[class_names[i]] = {
-            'correct': correct_percentage
-        }
-    
+        class_scores[classes[i]] = correct_percentage
     return class_scores
 
 
 def compare_prediction(img_path, mask_path, prediction, r=3, g=2, b=1):    
-    fig = plt.figure(figsize=(24, 12))  # Adjusted figure size
+    fig = plt.figure(figsize=(24, 12))
 
-    # Define gridspec with ratios for three image columns and one barplot column
     gs = fig.add_gridspec(1, 4)
 
-    # Create subplots using gridspec
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1])
     ax3 = fig.add_subplot(gs[2])
     ax4 = fig.add_subplot(gs[3])
 
-
     pal = [value for color in PALLETE for value in color]
     
-    # First subplot
-    _, img = convert(img_path, r=r, g=g, b=b)
+    # 1
+    _, img = convert_old(img_path, r=r, g=g, b=b)
     ax1.imshow(img)
     ax1.set_title('Original Image')
-    ax1.axis('off')  # Hide axes
+    ax1.axis('off')
 
-    # Second subplot
+    # 2
     mask_raw = tifffile.imread(mask_path)
     mask = Image.fromarray(mask_raw).convert('P')
     mask.putpalette(pal)
@@ -133,24 +110,22 @@ def compare_prediction(img_path, mask_path, prediction, r=3, g=2, b=1):
     ax2.set_title('Ground Truth Mask')
     ax2.axis('off')  # Hide axes
     
-    # Third subplot
+    # 3
     predicted_mask_img = Image.fromarray(prediction.astype('uint8')).convert('P')
     predicted_mask_img.putpalette(pal)
     ax3.imshow(predicted_mask_img)
     ax3.set_title('Predicted Mask')
-    ax3.axis('off')  # Hide axes
+    ax3.axis('off')
     
     # Fourth subplot for correctness scores
-    class_names = ["open water", "settlements", "bare soil", "forest", "grassland"]
-    class_colors = {class_names[cls]: np.array(pal[cls*3:(cls+1)*3]) / 255 for cls in range(5)}
     class_scores = match_scores(mask_raw, prediction)
+    class_colors = {CLASSES[i]: np.array(pal[i*3:(i+1)*3]) / 255 for i in range(len(CLASSES))}
     
-    # Get the maximum height of the bars for aspect adjustment
-    max_height = max([score['correct'] for score in class_scores.values()])
+    max_height = max([score for score in class_scores.values()])
 
     for cls, score in class_scores.items():
-        ax4.barh(cls, score['correct'], color=class_colors[cls])
-        ax4.text(score['correct'], cls, f"{score['correct']:.2f}%", va='center')
+        ax4.barh(cls, score, color=class_colors[cls])
+        ax4.text(score, cls, f"{score:.2f}%", va='center')
     
     ax4.set_title('Accuracy Scores')
     ax4.set_xlim(0, 100)
@@ -160,7 +135,7 @@ def compare_prediction(img_path, mask_path, prediction, r=3, g=2, b=1):
     # Adjust the aspect ratio of the barplot to make it square
     ax4.set_aspect(1/ax4.get_data_ratio())
 
-    plt.subplots_adjust(wspace=0.1, hspace=0.5)  # Adjust space between subplots
+    plt.subplots_adjust(wspace=0.1, hspace=0.5)
     plt.show()
 
-
+    
