@@ -1,42 +1,23 @@
 import os
-import re
+from random import choice, sample
+
+from SpectralIndex import SpectralIndex
+from utils import *
+
 import pandas as pd
 import numpy as np
 import tifffile
 from tqdm import tqdm
-from random import choice, sample
-
 import torch
 from torch.utils.data import Dataset, DataLoader
-from skimage.transform import resize
 from albumentations import Compose, RandomRotate90, RandomBrightnessContrast, ChannelDropout
-
+from sklearn.utils.class_weight import compute_class_weight
 import matplotlib.pyplot as plt
-
-class SpectralIndex:
-    def __init__(self, formula):
-        self.formula = formula
-        self.available_sensors = {
-            "B": 0, "G": 1, "R": 2, "RE1": 3, "RE2": 4, "RE3": 5, "N": 6, "N2": 7, "S1": 8, "S2": 9
-        }
-        tokens = re.findall(r'\b[A-Za-z]+\b', formula)
-
-        unknown_tokens = [token for token in tokens if token not in self.available_sensors.keys()]
-        if unknown_tokens:
-            raise ValueError(f"Unknown tokens in formula: {unknown_tokens}")
-
-    def apply(self, array):
-        band_vars = {key: array[val] for key, val in self.available_sensors.items()}
-        try:
-            index_result = eval(self.formula, {}, band_vars)
-        except Exception as e:
-            raise ValueError(f"Error in evaluating the formula: {e}")
-
-        return index_result
         
 
 class LandcoverDataset(Dataset):
-    def __init__(self, img_path, mask_path, n_random=None, transform=None):
+    def __init__(self, img_path, mask_path, batch_size, n_random=None, transforms=None, noweights=False):
+        self.num_classes = 5
         self.img_path = img_path
         self.mask_path = mask_path
         self.file_names = [
@@ -44,45 +25,53 @@ class LandcoverDataset(Dataset):
         ] if not n_random else sample([
             f for f in os.listdir(img_path) if f.endswith('.tif')
         ], n_random)
-        self.transform = Compose([
+        self.transforms = Compose([
             RandomRotate90(),
             RandomBrightnessContrast(p=0.1),
             ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.5)
-        ]) if transform is None else transform
-
+        ]) if transforms is None else transforms
         self.images = [self._load_and_preprocess_image(f) for f in tqdm(self.file_names, desc='Loading and preprocessing images')]
         self.masks = [self._load_and_preprocess_mask(f) for f in tqdm(self.file_names, desc='Loading and preprocessing masks')]
-
-    def _load_and_preprocess_image(self, filename):
-        image = tifffile.imread(os.path.join(self.img_path, filename))
-        image = self.normalize(image)
-        return np.moveaxis(image, -1, 0)  # Convert (H, W, C) to (C, H, W) for PyTorch
-
-    def _load_and_preprocess_mask(self, filename):
-        mask = tifffile.imread(os.path.join(self.mask_path, filename))
-        return mask  # Directly return the class indices
+        self.loader = DataLoader(self, batch_size=batch_size, num_workers=os.cpu_count())
+        self.class_weights = torch.FloatTensor(np.zeros(self.num_classes)).to(get_device()) if noweights else self._weight_classes()
 
     def __len__(self):
         return len(self.file_names)
 
     def __getitem__(self, idx):
         image, mask = self.images[idx], self.masks[idx]
-        if self.transform:
-            augmented = self.transform(image=image.transpose(1, 2, 0), mask=mask)
+        if self.transforms:
+            augmented = self.transforms(image=image.transpose(1, 2, 0), mask=mask)
             image = augmented['image'].transpose(2, 0, 1)
             mask = augmented['mask']
         return torch.tensor(image, dtype=torch.float32), torch.tensor(mask, dtype=torch.long)
+    
 
-    def normalize(self, image):
+    
+    def _weight_classes(self):
+        all_labels = torch.cat([masks.view(-1) for _, masks in tqdm(self.loader, desc='Weighting classes')])
+        classes = torch.unique(all_labels)
+        weight = compute_class_weight(None, classes=classes.numpy(), y=all_labels.numpy())
+        return torch.FloatTensor(weight).to(get_device())
+        
+    def _load_and_preprocess_image(self, filename):
+        image = tifffile.imread(os.path.join(self.img_path, filename))
+        image = self._normalize(image)
+        return np.moveaxis(image, -1, 0)  # Convert (H, W, C) to (C, H, W) for PyTorch
+
+    def _load_and_preprocess_mask(self, filename):
+        mask = tifffile.imread(os.path.join(self.mask_path, filename))
+        return mask  # Directly return the class indices
+
+    def _normalize(self, image):
         image = image.astype(np.float32)
         min_val = np.min(image, axis=(0, 1))
         max_val = np.max(image, axis=(0, 1))
         normalized = (image - min_val) / (max_val - min_val + 1e-8)
         return normalized
 
-    def load_data(self, batch_size, shuffle=True, num_workers=4):
-        return DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-
+    
+    
     def getinfo(self):
         num_images = len(self.images)
         img_shape = self.images[0].shape if num_images > 0 else "N/A"
@@ -96,7 +85,7 @@ class LandcoverDataset(Dataset):
         print(f"Mask Shape: {mask_shape}")
         print(f"Image Data Type: {img_dtype}")
         print(f"Mask Data Type: {mask_dtype}")
-        print(f"Transformations: {self.transform}")
+        print(f"Transformations: {self.transforms}")
 
 
     def plot_sample(self, n, r=2, g=1, b=0, index=""):
@@ -205,7 +194,7 @@ class LandcoverDataset(Dataset):
             class_correct[class_id] = np.sum(predicted_mask[class_mask] == class_id)
             class_total[class_id] = np.sum(class_mask)
 
-        accuracy_scores = np.divide(class_correct, class_total, out=np.zeros_like(class_correct, dtype=float), where=class_total != 0)
+        accuracy_scores = np.divide(class_correct, class_total, out=np.ones_like(class_correct, dtype=float), where=class_total != 0)
         accuracy = round(np.mean(accuracy_scores), 2)
 
         # Plot image, mask, predicted mask, and accuracy scores

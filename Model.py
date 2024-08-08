@@ -4,6 +4,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import numpy as np
 import tifffile
+from utils import *
 
 class CNN(nn.Module):
     def __init__(self, layers):
@@ -14,16 +15,12 @@ class CNN(nn.Module):
     def forward(self, x):
         return self.model(x)
     
-    def _get_device(self):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Device: {device}")
-        return device
-    
-    def train(self, train_loader, val_loader, num_epochs, learning_rate):
-        device = self._get_device()
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
+    def train(self, train_loader, val_loader, num_epochs, learning_rate):
+        device = get_device()
+        class_weights = train_loader.class_weights
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+        optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         self.model.to(device)
         train_story = {
             "train_loss": [],
@@ -33,9 +30,9 @@ class CNN(nn.Module):
         }
         for epoch in range(num_epochs):
             train_story["train_loss"].append(
-                self._train_epoch(epoch, num_epochs, train_loader, optimizer, criterion, device)
+                self._train_epoch(epoch, num_epochs, train_loader.loader, optimizer, criterion, device)
             )
-            val_loss, accuracy_scores = self._validate_epoch(epoch, num_epochs, val_loader, criterion, device)
+            val_loss, accuracy_scores = self._validate_epoch(epoch, num_epochs, val_loader.loader, criterion, device)
             train_story["val_loss"].append(val_loss)
             train_story["val_accuracy"].append(accuracy_scores)
             train_story["mean_accuracy"].append(np.mean(accuracy_scores))
@@ -77,8 +74,9 @@ class CNN(nn.Module):
                     class_total[class_id] += class_mask.sum().item()
 
         val_loss = round(running_loss / len(val_loader), 2)
-        accuracy_scores = np.divide(class_correct, class_total, out=np.zeros_like(class_correct, dtype=float), where=class_total != 0)
-        print(f'Epoch [{epoch+1}/{num_epochs}], Val loss: {val_loss}, Accuracy: {accuracy_scores}', end="")
+        accuracy_scores = np.divide(class_correct, class_total, out=np.ones_like(class_correct, dtype=float), where=class_total != 0)
+        acc = round(np.mean(accuracy_scores), 2)
+        print(f'Epoch [{epoch+1}/{num_epochs}], Val loss: {val_loss}, Accuracy: {acc}', end="")
         return val_loss, accuracy_scores
         
             
@@ -93,17 +91,13 @@ class CNN(nn.Module):
 
     
     def predict(self, image_path):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+        device = get_device()
         image = self._preprocess_image(image_path)
         image = torch.from_numpy(image).unsqueeze(0).to(device)
-
         self.model.eval()
-
         with torch.no_grad():
             output = self.model(image)
             predicted_mask = torch.argmax(output, dim=1).squeeze(0).cpu().numpy()
-
         return predicted_mask
     
     def pickle(self, path):

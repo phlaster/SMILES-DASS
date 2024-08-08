@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import tifffile
+import torch
 
 def get_filenames_in_dir(path):
     filenames = np.array([
@@ -62,3 +63,9 @@ Bit depth: {bit_depth}
 Unique colors per band: {unique_colors}
         """
         return summary
+    
+    
+def get_device():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
+    return device
