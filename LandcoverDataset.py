@@ -142,3 +142,102 @@ class LandcoverDataset(Dataset):
         axs[1].axis('off')
 
         plt.show()
+        
+    def plot_prediction(self, model, n, r=2, g=1, b=0, index=""):
+        PALETTE = [
+            [0, 204, 242],
+            [230, 0, 77],
+            [204, 204, 204],
+            [100, 180, 50],
+            [180, 230, 77]
+        ]
+        class_names = [
+            "Water",
+            "Urban",
+            "Bare soil",
+            "Forest",
+            "Grassland"
+        ]
+
+        # Apply the palette to the mask
+        def apply_palette(mask, palette):
+            palette_array = np.array(palette)
+            return palette_array[mask]
+
+        def adjust(picture, a=3.5, b=0.0):
+            # Naive gamma correction
+            picture = picture ** 0.3 + b - np.min(picture)
+            return (picture) / (np.max(picture) - np.min(picture) + 1e-8)
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.model.to(device)
+        model.model.eval()
+
+        image, mask = self[n]
+        image_np = image.cpu().numpy().transpose(1, 2, 0)
+        mask_np = mask.cpu().numpy()
+
+        if index:
+            si = SpectralIndex(index)
+            applied = si.apply(image_np.transpose(2, 0, 1))  # (C, H, W) format expected
+            rgb_image = (applied - np.min(applied)) / (np.max(applied) - np.min(applied) + 1e-8)
+        else:
+            rgb_image = adjust(image_np[..., [r, g, b]])
+
+        colored_mask = apply_palette(mask_np, PALETTE)
+
+        # Predict the mask
+        with torch.no_grad():
+            image = image.unsqueeze(0).to(device)
+            predicted = model.model(image)
+            _, predicted_mask = torch.max(predicted, 1)
+            predicted_mask = predicted_mask.squeeze(0).cpu().numpy()
+
+        colored_predicted_mask = apply_palette(predicted_mask, PALETTE)
+
+        # Calculate accuracy scores
+        num_classes = len(PALETTE)
+        class_correct = np.zeros(num_classes, dtype=int)
+        class_total = np.zeros(num_classes, dtype=int)
+
+        for class_id in range(num_classes):
+            class_mask = mask_np == class_id
+            class_correct[class_id] = np.sum(predicted_mask[class_mask] == class_id)
+            class_total[class_id] = np.sum(class_mask)
+
+        accuracy_scores = np.divide(class_correct, class_total, out=np.zeros_like(class_correct, dtype=float), where=class_total != 0)
+        accuracy = round(np.mean(accuracy_scores), 2)
+
+        # Plot image, mask, predicted mask, and accuracy scores
+        fig, axs = plt.subplots(1, 4, figsize=(24, 6))
+        axs[0].imshow(rgb_image, cmap='gray' if index else None)
+        axs[0].set_title(f'Index Image {n}' if index else f'RGB Image {n}')
+        axs[0].axis('off')
+
+        axs[1].imshow(colored_mask)
+        axs[1].set_title(f'Mask {n}')
+        axs[1].axis('off')
+
+        axs[2].imshow(colored_predicted_mask)
+        axs[2].set_title(f'Predicted Mask {n}')
+        axs[2].axis('off')
+
+        # Bar plot for accuracy scores
+        colors = [tuple(c / 255 for c in color) for color in PALETTE]
+        axs[3].bar(range(num_classes), accuracy_scores, color=colors)
+        axs[3].set_ylim(0, 1)
+        axs[3].set_ylabel('Accuracy Score')
+        axs[3].set_title(f'Class Accuracy Scores, mean: {accuracy}')
+        axs[3].set_xticks(range(num_classes))
+        axs[3].set_xticklabels(class_names)
+
+        plt.subplots_adjust(wspace=0.1, hspace=0.1)
+        plt.tight_layout()
+        plt.show()
+        
+        
+    def rand_samp_names(self):
+        name = choice(self.file_names)
+        img_name = os.path.join(self.img_path, name)
+        mask_name = os.path.join(self.mask_path, name)
+        return img_name, mask_name
