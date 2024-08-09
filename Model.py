@@ -26,22 +26,26 @@ class CNN(nn.Module):
             "train_loss": [],
             "val_loss": [],
             "val_accuracy": [],
-            "mean_accuracy": []
+            "val_recall": [],
+            "val_prescision": [],
+            "val_f1": []
         }
         for epoch in range(num_epochs):
             train_story["train_loss"].append(
                 self._train_epoch(epoch, num_epochs, train_loader.loader, optimizer, criterion, device)
             )
-            val_loss, accuracy_scores = self._validate_epoch(epoch, num_epochs, val_loader.loader, criterion, device)
-            train_story["val_loss"].append(val_loss)
-            train_story["val_accuracy"].append(accuracy_scores)
-            train_story["mean_accuracy"].append(np.mean(accuracy_scores))
+            scores = self._validate_epoch(epoch, num_epochs, val_loader.loader, criterion, device)
+            train_story["val_loss"].append(scores[0])
+            train_story["val_accuracy"].append(scores[1])
+            train_story["val_recall"].append(scores[2])
+            train_story["val_prescision"].append(scores[3])
+            train_story["val_f1"].append(scores[4])
         return train_story
     
     def _train_epoch(self, epoch, num_epochs, train_loader, optimizer, criterion, device):
         self.model.train()
         running_loss = 0.0
-        for images, masks in tqdm(train_loader, desc=f'Train {epoch+1}/{num_epochs}'):
+        for images, masks in tqdm(train_loader, desc=f'Train {epoch+1}/{num_epochs}', leave=False):
             images, masks = images.to(device), masks.to(device)
             optimizer.zero_grad()
             outputs = self.model(images)
@@ -57,27 +61,34 @@ class CNN(nn.Module):
         self.model.eval()
         running_loss = 0.0
         num_classes = 5
-        class_correct = [0] * num_classes
-        class_total = [0] * num_classes
-
+        L = len(val_loader)
+        accuracy_scores = np.zeros(num_classes)
+        recall_scores = np.zeros(num_classes)
+        prescision_scores = np.zeros(num_classes)
+        f1_scores = np.zeros(num_classes)
+        
         with torch.no_grad():
-            for images, masks in tqdm(val_loader, desc=f'Validate {epoch+1}/{num_epochs}'):
+            for images, masks in tqdm(val_loader, desc=f'Validate {epoch+1}/{num_epochs}', leave=False):
                 images, masks = images.to(device), masks.to(device)
                 outputs = self.model(images)
                 loss = criterion(outputs, masks)
                 running_loss += loss.item()
 
                 _, predicted = torch.max(outputs, 1)
-                for class_id in range(num_classes):
-                    class_mask = (masks == class_id)
-                    class_correct[class_id] += (predicted[class_mask] == class_id).sum().item()
-                    class_total[class_id] += class_mask.sum().item()
+                predicted_np = predicted.cpu().numpy()
+                masks_np = masks.cpu().numpy()
+                accuracy_scores += metric_accuracy(masks_np, predicted_np, num_classes)
+                recall_scores += metric_recall(masks_np, predicted_np, num_classes)
+                prescision_scores += metric_precision(masks_np, predicted_np, num_classes)
+                f1_scores += metric_f1(masks_np, predicted_np, num_classes)
 
-        val_loss = round(running_loss / len(val_loader), 2)
-        accuracy_scores = np.divide(class_correct, class_total, out=np.ones_like(class_correct, dtype=float), where=class_total != 0)
-        acc = round(np.mean(accuracy_scores), 2)
-        print(f'Epoch [{epoch+1}/{num_epochs}], Val loss: {val_loss}, Accuracy: {acc}', end="")
-        return val_loss, accuracy_scores
+        val_loss = round(running_loss / L, 2)
+        accuracy = round(np.mean(accuracy_scores/L), 2)
+        recall = round(np.mean(recall_scores/L), 2)
+        prescision = round(np.mean(prescision_scores/L), 2)
+        f1 = round(np.mean(f1_scores/L), 2)
+        print(f'Epoch [{epoch+1}/{num_epochs}], Val loss {val_loss}, Accuracy {accuracy}, Recall {recall}, Prescision {prescision}, F1 {f1}', end="")
+        return val_loss, accuracy_scores, recall_scores, prescision_scores, f1_scores
         
             
     def _preprocess_image(self, image_path, target_size=512):
