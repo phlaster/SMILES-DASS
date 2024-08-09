@@ -26,14 +26,13 @@ class LandcoverDataset(Dataset):
             f for f in os.listdir(img_path) if f.endswith('.tif')
         ], n_random)
         self.transforms = Compose([
-            RandomRotate90(),
             RandomBrightnessContrast(p=0.1),
             ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.5)
         ]) if transforms is None else transforms
         self.images = [self._load_and_preprocess_image(f) for f in tqdm(self.file_names, desc='Loading and preprocessing images')]
         self.masks = [self._load_and_preprocess_mask(f) for f in tqdm(self.file_names, desc='Loading and preprocessing masks')]
         self.loader = DataLoader(self, batch_size=batch_size, num_workers=os.cpu_count())
-        self.class_weights = torch.FloatTensor(np.zeros(self.num_classes)).to(get_device()) if noweights else self._weight_classes()
+        self.class_weights = self._weight_classes(noweights).to(get_device()) 
 
     def __len__(self):
         return len(self.file_names)
@@ -47,12 +46,18 @@ class LandcoverDataset(Dataset):
         return torch.tensor(image, dtype=torch.float32), torch.tensor(mask, dtype=torch.long)
     
 
-    
-    def _weight_classes(self):
-        all_labels = torch.cat([masks.view(-1) for _, masks in tqdm(self.loader, desc='Weighting classes')])
-        classes = torch.unique(all_labels)
-        weight = compute_class_weight(None, classes=classes.numpy(), y=all_labels.numpy())
-        return torch.FloatTensor(weight).to(get_device())
+    def _weight_classes(self, noweights):
+        if noweights:
+            weight = np.ones(self.num_classes)
+        else:
+            all_labels = torch.cat([masks.view(-1) for _, masks in tqdm(self.loader, desc='Weighting classes')])
+            classes = torch.unique(all_labels)
+            class_counts = torch.bincount(all_labels)
+            class_frequencies = class_counts.float() / len(all_labels)
+            median_frequency = torch.median(class_frequencies)
+            weight = median_frequency / class_frequencies
+        return torch.FloatTensor(weight)
+
         
     def _load_and_preprocess_image(self, filename):
         image = tifffile.imread(os.path.join(self.img_path, filename))
@@ -113,7 +118,9 @@ class LandcoverDataset(Dataset):
 
         if index:
             si = SpectralIndex(index)
-            applied = si.apply(image.transpose(2, 0, 1))  # (C, H, W) format expected
+            transposed = image.transpose(2, 0, 1) # (C, H, W) format expected
+            noise = np.random.normal(loc=0, scale=1e-8, size=transposed.shape)
+            applied = si.apply(transposed + noise)  
             rgb_image = (applied - np.min(applied)) / (np.max(applied) - np.min(applied) + 1e-8)
         else:
             rgb_image = adjust(image[..., [r, g, b]])
@@ -168,7 +175,9 @@ class LandcoverDataset(Dataset):
 
         if index:
             si = SpectralIndex(index)
-            applied = si.apply(image_np.transpose(2, 0, 1))  # (C, H, W) format expected
+            transposed = image.transpose(2, 0, 1) # (C, H, W) format expected
+            noise = np.random.normal(loc=0, scale=1e-8, size=transposed.shape)
+            applied = si.apply(transposed + noise)  
             rgb_image = (applied - np.min(applied)) / (np.max(applied) - np.min(applied) + 1e-8)
         else:
             rgb_image = adjust(image_np[..., [r, g, b]])
@@ -184,17 +193,8 @@ class LandcoverDataset(Dataset):
 
         colored_predicted_mask = apply_palette(predicted_mask, PALETTE)
 
-        # Calculate accuracy scores
         num_classes = len(PALETTE)
-        class_correct = np.zeros(num_classes, dtype=int)
-        class_total = np.zeros(num_classes, dtype=int)
-
-        for class_id in range(num_classes):
-            class_mask = mask_np == class_id
-            class_correct[class_id] = np.sum(predicted_mask[class_mask] == class_id)
-            class_total[class_id] = np.sum(class_mask)
-
-        accuracy_scores = np.divide(class_correct, class_total, out=np.ones_like(class_correct, dtype=float), where=class_total != 0)
+        accuracy_scores = metric_accuracy(mask_np, predicted_mask, num_classes)
         accuracy = round(np.mean(accuracy_scores), 2)
 
         # Plot image, mask, predicted mask, and accuracy scores
