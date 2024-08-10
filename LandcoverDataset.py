@@ -10,10 +10,39 @@ import tifffile
 from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, DataLoader
-from albumentations import Compose, RandomRotate90, RandomBrightnessContrast, ChannelDropout
+from torchvision.transforms import Compose, Lambda
 from sklearn.utils.class_weight import compute_class_weight
 import matplotlib.pyplot as plt
         
+
+class RandomBrightnessContrast:
+    def __init__(self, brightness_limit=0.2, contrast_limit=0.2, p=0.1):
+        self.brightness_limit = brightness_limit
+        self.contrast_limit = contrast_limit
+        self.p = p
+
+    def __call__(self, img):
+        if torch.rand(1) < self.p:
+            brightness_factor = 1 + torch.rand(1) * self.brightness_limit * 2 - self.brightness_limit
+            contrast_factor = 1 + torch.rand(1) * self.contrast_limit * 2 - self.contrast_limit
+            img = torch.clamp(img * brightness_factor, 0, 1)
+            mean = img.mean()
+            img = (img - mean) * contrast_factor + mean
+        return img
+
+
+class ChannelDropout:
+    def __init__(self, channel_drop_range=(1, 2), fill_value=0, p=0.5):
+        self.channel_drop_range = channel_drop_range
+        self.fill_value = fill_value
+        self.p = p
+
+    def __call__(self, img):
+        if torch.rand(1) < self.p:
+            num_channels_to_drop = np.random.randint(self.channel_drop_range[0], self.channel_drop_range[1] + 1)
+            channels_to_drop = np.random.choice(img.shape[0], num_channels_to_drop, replace=False)
+            img[channels_to_drop, :, :] = self.fill_value
+        return img
 
 class LandcoverDataset(Dataset):
     def __init__(self, img_path, mask_path, batch_size, n_random=None, transforms=None, noweights=False):
@@ -39,11 +68,10 @@ class LandcoverDataset(Dataset):
 
     def __getitem__(self, idx):
         image, mask = self.images[idx], self.masks[idx]
+        image = torch.tensor(image, dtype=torch.float32)  # Convert image to torch.Tensor
         if self.transforms:
-            augmented = self.transforms(image=image.transpose(1, 2, 0), mask=mask)
-            image = augmented['image'].transpose(2, 0, 1)
-            mask = augmented['mask']
-        return torch.tensor(image, dtype=torch.float32), torch.tensor(mask, dtype=torch.long)
+            image = self.transforms(image)
+        return image.clone().detach(), torch.tensor(mask, dtype=torch.long)
     
 
     def _weight_classes(self, noweights):
