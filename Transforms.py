@@ -18,14 +18,19 @@ class RandomBrightnessContrast:
 
 
 class ChannelDropout:
-    def __init__(self, channel_drop_range=(1, 2), fill_value=0, p=0.5):
+    def __init__(self, channel_drop_range=(1, 2), fill_value=0, p=0.5, protect_last=0):
         self.channel_drop_range = channel_drop_range
         self.fill_value = fill_value
         self.p = p
+        self.protect_last = protect_last
 
     def __call__(self, img):
         if torch.rand(1) < self.p:
-            num_channels_to_drop = np.random.randint(self.channel_drop_range[0], self.channel_drop_range[1] + 1)
-            channels_to_drop = np.random.choice(img.shape[0], num_channels_to_drop, replace=False)
+            num_channels = img.shape[0]
+            droppable_channels = num_channels - self.protect_last
+            max_drop = min(self.channel_drop_range[1], droppable_channels)
+            adjusted_drop_range = (min(self.channel_drop_range[0], max_drop), max_drop)
+            num_channels_to_drop = np.random.randint(adjusted_drop_range[0], adjusted_drop_range[1] + 1)
+            channels_to_drop = np.random.choice(droppable_channels, num_channels_to_drop, replace=False)
             img[channels_to_drop, :, :] = self.fill_value
         return img

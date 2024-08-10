@@ -1,3 +1,5 @@
+import multiprocessing
+from functools import partial
 import os
 from random import choice, sample
 
@@ -16,7 +18,7 @@ import matplotlib.pyplot as plt
 
 
 class LandcoverDataset(Dataset):
-    def __init__(self, img_path, mask_path, batch_size, n_random=None, transforms=None, noweights=False):
+    def __init__(self, img_path, mask_path, batch_size, n_random=None, transforms=None, indexes=None):
         self.num_classes = 5
         self.img_path = img_path
         self.mask_path = mask_path
@@ -25,11 +27,18 @@ class LandcoverDataset(Dataset):
         ] if not n_random else sample([
             f for f in os.listdir(img_path) if f.endswith('.tif')
         ], n_random)
+        self.indexes = indexes if indexes is not None else []
+        self.spectral_indices = [SpectralIndex(index) for index in self.indexes]
         self.transforms = Compose([
             RandomBrightnessContrast(p=0.1),
-            ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.5)
+            ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.5, protect_last=len(self.indexes))
         ]) if transforms is None else transforms
-        self.images = [self._load_and_preprocess_image(f) for f in tqdm(self.file_names, desc='Loading and preprocessing images')]
+        with multiprocessing.Pool(processes=os.cpu_count()) as pool: # otherwise too slow
+            self.images = list(tqdm(
+                pool.imap(self._load_and_preprocess_image, self.file_names),
+                total=len(self.file_names),
+                desc='Loading and preprocessing images'
+            ))
         self.masks = [self._load_and_preprocess_mask(f) for f in tqdm(self.file_names, desc='Loading and preprocessing masks')]
         self.loader = DataLoader(self, batch_size=batch_size, num_workers=os.cpu_count())
 
@@ -61,7 +70,16 @@ class LandcoverDataset(Dataset):
     def _load_and_preprocess_image(self, filename):
         image = tifffile.imread(os.path.join(self.img_path, filename))
         image = self._normalize(image)
-        return np.moveaxis(image, -1, 0)  # Convert (H, W, C) to (C, H, W) for PyTorch
+        image = np.moveaxis(image, -1, 0)  # Convert (H, W, C) to (C, H, W) for PyTorch
+        
+        # Calculate and add spectral indices
+        for si in self.spectral_indices:
+            noise = np.random.normal(loc=0, scale=1e-8, size=image.shape)
+            index_band = si.apply(image + noise)
+            index_band = self._normalize(index_band[np.newaxis, ...])  # Add channel dimension and normalize
+            image = np.concatenate((image, index_band), axis=0)
+        
+        return image
 
     def _load_and_preprocess_mask(self, filename):
         mask = tifffile.imread(os.path.join(self.mask_path, filename))
@@ -69,8 +87,8 @@ class LandcoverDataset(Dataset):
 
     def _normalize(self, image):
         image = image.astype(np.float32)
-        min_val = np.min(image, axis=(0, 1))
-        max_val = np.max(image, axis=(0, 1))
+        min_val = np.min(image, axis=(1, 2), keepdims=True)
+        max_val = np.max(image, axis=(1, 2), keepdims=True)
         normalized = (image - min_val) / (max_val - min_val + 1e-8)
         return normalized
 
@@ -90,6 +108,7 @@ class LandcoverDataset(Dataset):
         print(f"Image Data Type: {img_dtype}")
         print(f"Mask Data Type: {mask_dtype}")
         print(f"Transformations: {self.transforms}")
+        print(f"Spectral Indices: {self.indexes}")
 
 
     def plot_sample(self, n, r=2, g=1, b=0, index=""):
