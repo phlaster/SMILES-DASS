@@ -11,7 +11,9 @@ import tifffile
 from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import Compose
+import torchvision
+torchvision.disable_beta_transforms_warning()
+from torchvision.transforms.v2 import Compose, GaussianBlur
 from Transforms import RandomBrightnessContrast, ChannelDropout
 import matplotlib.pyplot as plt
 from skimage import exposure
@@ -32,20 +34,25 @@ class LandcoverDataset(Dataset):
         self.indexes = indexes if indexes is not None else []
         self.spectral_indices = [SpectralIndex(index) for index in self.indexes]
         self.transforms = Compose([
+            # GaussianBlur(3),
             RandomBrightnessContrast(p=0.3),
             ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.25, protect_last=len(self.indexes))
         ]) if transforms is None else transforms
         
+        # self.images = [self._load_and_preprocess_image(f) for f in tqdm(self.file_names, desc='Loading and preprocessing images')]
         with multiprocessing.Pool(processes=os.cpu_count()) as pool: # otherwise too slow
             self.images = list(tqdm(
                 pool.imap(self._load_and_preprocess_image, self.file_names),
                 total=len(self.file_names),
                 desc='Loading and preprocessing images'))
-        with multiprocessing.Pool(processes=os.cpu_count()) as pool:
-            self.masks = list(tqdm(
-                pool.imap(self._load_and_preprocess_mask, self.file_names),
-                total=len(self.file_names),
-                desc='Loading and preprocessing masks'))
+        
+        self.masks = [self._load_and_preprocess_mask(f) for f in tqdm(self.file_names, desc='Loading and preprocessing masks')]
+        # with multiprocessing.Pool(processes=os.cpu_count()) as pool:
+        #     self.masks = list(tqdm(
+        #         pool.imap(self._load_and_preprocess_mask, self.file_names),
+        #         total=len(self.file_names),
+        #         desc='Loading and preprocessing masks'))
+        
         self.loader = DataLoader(self, batch_size=batch_size, num_workers=os.cpu_count())
 
     def __len__(self):
@@ -192,7 +199,7 @@ class LandcoverDataset(Dataset):
             applied = si.apply(transposed + noise)  
             rgb_image = (applied - np.min(applied)) / (np.max(applied) - np.min(applied) + 1e-8)
         else:
-            rgb_image = exposure.rescale_intensity(image[..., [r, g, b]], out_range=(0, 1)) ** 0.3
+            rgb_image = exposure.rescale_intensity(image_np[..., [r, g, b]], out_range=(0, 1)) ** 0.3
 
         colored_mask = apply_palette(mask_np, PALETTE)
 
