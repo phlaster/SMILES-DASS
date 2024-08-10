@@ -10,7 +10,6 @@ class CNN(nn.Module):
     def __init__(self, layers):
         super(CNN, self).__init__()
         self.model = nn.Sequential(*layers)
-        print(self.model)
 
     def forward(self, x):
         return self.model(x)
