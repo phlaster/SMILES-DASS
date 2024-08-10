@@ -16,10 +16,15 @@ class CNN(nn.Module):
         return self.model(x)
     
 
+    def calculate_weights(self, class_counts):
+        total_pixels = class_counts.sum()
+        class_frequencies = class_counts.float() / total_pixels
+        median_frequency = torch.median(class_frequencies)
+        weights = median_frequency / class_frequencies
+        return weights
+
     def train(self, train_loader, val_loader, num_epochs, learning_rate):
         device = get_device()
-        class_weights = train_loader.class_weights
-        criterion = nn.CrossEntropyLoss(weight=class_weights)
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         self.model.to(device)
         train_story = {
@@ -32,9 +37,9 @@ class CNN(nn.Module):
         }
         for epoch in range(num_epochs):
             train_story["train_loss"].append(
-                self._train_epoch(epoch, num_epochs, train_loader.loader, optimizer, criterion, device)
+                self._train_epoch(epoch, num_epochs, train_loader.loader, optimizer, device)
             )
-            scores = self._validate_epoch(epoch, num_epochs, val_loader.loader, criterion, device)
+            scores = self._validate_epoch(epoch, num_epochs, val_loader.loader, device)
             train_story["val_loss"].append(scores[0])
             train_story["val_accuracy"].append(scores[1])
             train_story["val_recall"].append(scores[2])
@@ -42,11 +47,18 @@ class CNN(nn.Module):
             train_story["val_f1"].append(scores[4])
         return train_story
     
-    def _train_epoch(self, epoch, num_epochs, train_loader, optimizer, criterion, device):
+    def _train_epoch(self, epoch, num_epochs, train_loader, optimizer, device):
         self.model.train()
         running_loss = 0.0
-        for images, masks in tqdm(train_loader, desc=f'Train {epoch+1}/{num_epochs}', leave=False):
+        for images, masks, class_counts in tqdm(train_loader, desc=f'Train {epoch+1}/{num_epochs}', leave=False):
             images, masks = images.to(device), masks.to(device)
+            class_counts = class_counts.to(device)
+            
+            # Calculate weights for this batch
+            batch_weights = self.calculate_weights(class_counts.sum(dim=0))
+            # Create criterion with dynamic weights
+            criterion = nn.CrossEntropyLoss(weight=batch_weights)
+            
             optimizer.zero_grad()
             outputs = self.model(images)
             loss = criterion(outputs, masks)
@@ -57,7 +69,7 @@ class CNN(nn.Module):
         print(f'Epoch [{epoch+1}/{num_epochs}], Train loss: {epoch_loss}', end="")
         return epoch_loss
 
-    def _validate_epoch(self, epoch, num_epochs, val_loader, criterion, device):
+    def _validate_epoch(self, epoch, num_epochs, val_loader, device):
         self.model.eval()
         running_loss = 0.0
         num_classes = 5
@@ -68,8 +80,16 @@ class CNN(nn.Module):
         f1_scores = np.zeros(num_classes)
         
         with torch.no_grad():
-            for images, masks in tqdm(val_loader, desc=f'Validate {epoch+1}/{num_epochs}', leave=False):
+            for images, masks, class_counts in tqdm(val_loader, desc=f'Validate {epoch+1}/{num_epochs}', leave=False):
                 images, masks = images.to(device), masks.to(device)
+                class_counts = class_counts.to(device)
+                
+                # Calculate weights for this batch
+                batch_weights = self.calculate_weights(class_counts.sum(dim=0))
+                
+                # Create criterion with dynamic weights
+                criterion = nn.CrossEntropyLoss(weight=batch_weights)
+                
                 outputs = self.model(images)
                 loss = criterion(outputs, masks)
                 running_loss += loss.item()

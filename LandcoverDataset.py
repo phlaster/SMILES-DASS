@@ -32,17 +32,17 @@ class LandcoverDataset(Dataset):
         self.images = [self._load_and_preprocess_image(f) for f in tqdm(self.file_names, desc='Loading and preprocessing images')]
         self.masks = [self._load_and_preprocess_mask(f) for f in tqdm(self.file_names, desc='Loading and preprocessing masks')]
         self.loader = DataLoader(self, batch_size=batch_size, num_workers=os.cpu_count())
-        self.class_weights = self._weight_classes(noweights).to(get_device()) 
 
     def __len__(self):
         return len(self.file_names)
 
     def __getitem__(self, idx):
         image, mask = self.images[idx], self.masks[idx]
-        image = torch.tensor(image, dtype=torch.float32)  # Convert image to torch.Tensor
+        image = torch.tensor(image, dtype=torch.float32)
         if self.transforms:
             image = self.transforms(image)
-        return image.clone().detach(), torch.tensor(mask, dtype=torch.long)
+        class_counts = torch.bincount(torch.tensor(mask).view(-1), minlength=self.num_classes)        
+        return image.clone().detach(), torch.tensor(mask, dtype=torch.long), class_counts
     
 
     def _weight_classes(self, noweights):
@@ -111,7 +111,7 @@ class LandcoverDataset(Dataset):
             # Naive gamma correction
             return (picture**0.3 + b - np.min(picture)) / (np.max(picture) - np.min(picture) + 1e-8)
 
-        image, mask = self[n]
+        image, mask, _ = self[n]
         image = image.cpu().numpy().transpose(1, 2, 0)
         mask = mask.cpu().numpy()
 
@@ -168,7 +168,7 @@ class LandcoverDataset(Dataset):
         model.model.to(device)
         model.model.eval()
 
-        image, mask = self[n]
+        image, mask, _ = self[n]
         image_np = image.cpu().numpy().transpose(1, 2, 0)
         mask_np = mask.cpu().numpy()
 
