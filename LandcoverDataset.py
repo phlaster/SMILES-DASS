@@ -14,6 +14,8 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose
 from Transforms import RandomBrightnessContrast, ChannelDropout
 import matplotlib.pyplot as plt
+from skimage import exposure
+
         
 
 
@@ -30,16 +32,20 @@ class LandcoverDataset(Dataset):
         self.indexes = indexes if indexes is not None else []
         self.spectral_indices = [SpectralIndex(index) for index in self.indexes]
         self.transforms = Compose([
-            RandomBrightnessContrast(p=0.1),
-            ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.5, protect_last=len(self.indexes))
+            RandomBrightnessContrast(p=0.3),
+            ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.25, protect_last=len(self.indexes))
         ]) if transforms is None else transforms
+        
         with multiprocessing.Pool(processes=os.cpu_count()) as pool: # otherwise too slow
             self.images = list(tqdm(
                 pool.imap(self._load_and_preprocess_image, self.file_names),
                 total=len(self.file_names),
-                desc='Loading and preprocessing images'
-            ))
-        self.masks = [self._load_and_preprocess_mask(f) for f in tqdm(self.file_names, desc='Loading and preprocessing masks')]
+                desc='Loading and preprocessing images'))
+        with multiprocessing.Pool(processes=os.cpu_count()) as pool:
+            self.masks = list(tqdm(
+                pool.imap(self._load_and_preprocess_mask, self.file_names),
+                total=len(self.file_names),
+                desc='Loading and preprocessing masks'))
         self.loader = DataLoader(self, batch_size=batch_size, num_workers=os.cpu_count())
 
     def __len__(self):
@@ -87,8 +93,8 @@ class LandcoverDataset(Dataset):
 
     def _normalize(self, image):
         image = image.astype(np.float32)
-        min_val = np.min(image, axis=(1, 2), keepdims=True)
-        max_val = np.max(image, axis=(1, 2), keepdims=True)
+        min_val = np.min(image, axis=(0, 1), keepdims=True)
+        max_val = np.max(image, axis=(0, 1), keepdims=True)
         normalized = (image - min_val) / (max_val - min_val + 1e-8)
         return normalized
 
@@ -110,8 +116,12 @@ class LandcoverDataset(Dataset):
         print(f"Transformations: {self.transforms}")
         print(f"Spectral Indices: {self.indexes}")
 
-
     def plot_sample(self, n, r=2, g=1, b=0, index=""):
+        def apply_palette(mask, palette):
+            palette_array = np.array(palette)
+            colored_mask = palette_array[mask]
+            return colored_mask
+
         PALETTE = [
             [0, 204, 242],
             [230, 0, 77],
@@ -119,29 +129,18 @@ class LandcoverDataset(Dataset):
             [100, 180, 50],
             [180, 230, 77]
         ]
-
-        # Apply the palette to the mask
-        def apply_palette(mask, palette):
-            palette_array = np.array(palette)
-            colored_mask = palette_array[mask]
-            return colored_mask
-
-        def adjust(picture, a=3.5, b=0.0):
-            # Naive gamma correction
-            return (picture**0.3 + b - np.min(picture)) / (np.max(picture) - np.min(picture) + 1e-8)
-
+        
         image, mask, _ = self[n]
         image = image.cpu().numpy().transpose(1, 2, 0)
-        mask = mask.cpu().numpy()
 
         if index:
             si = SpectralIndex(index)
             transposed = image.transpose(2, 0, 1) # (C, H, W) format expected
             noise = np.random.normal(loc=0, scale=1e-8, size=transposed.shape)
             applied = si.apply(transposed + noise)  
-            rgb_image = (applied - np.min(applied)) / (np.max(applied) - np.min(applied) + 1e-8)
+            rgb_image = _normalize(applied)
         else:
-            rgb_image = adjust(image[..., [r, g, b]])
+            rgb_image = exposure.rescale_intensity(image[..., [r, g, b]], out_range=(0, 1)) ** 0.3
 
         colored_mask = apply_palette(mask, PALETTE)
 
@@ -178,11 +177,6 @@ class LandcoverDataset(Dataset):
             palette_array = np.array(palette)
             return palette_array[mask]
 
-        def adjust(picture, a=3.5, b=0.0):
-            # Naive gamma correction
-            picture = picture ** 0.3 + b - np.min(picture)
-            return (picture) / (np.max(picture) - np.min(picture) + 1e-8)
-
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.model.to(device)
         model.model.eval()
@@ -198,7 +192,7 @@ class LandcoverDataset(Dataset):
             applied = si.apply(transposed + noise)  
             rgb_image = (applied - np.min(applied)) / (np.max(applied) - np.min(applied) + 1e-8)
         else:
-            rgb_image = adjust(image_np[..., [r, g, b]])
+            rgb_image = exposure.rescale_intensity(image[..., [r, g, b]], out_range=(0, 1)) ** 0.3
 
         colored_mask = apply_palette(mask_np, PALETTE)
 
