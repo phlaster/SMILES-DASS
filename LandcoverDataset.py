@@ -147,14 +147,14 @@ class LandcoverDataset(Dataset):
             transposed = image.transpose(2, 0, 1) # (C, H, W) format expected
             noise = np.random.normal(loc=0, scale=1e-8, size=transposed.shape)
             applied = si.apply(transposed + noise)  
-            rgb_image = _normalize(applied)
+            rgb_image = self._normalize(applied)
         else:
             rgb_image = exposure.rescale_intensity(image[..., [r, g, b]], out_range=(0, 1)) ** 0.3
 
         colored_mask = apply_palette(mask, PALETTE)
 
         # Plot image and mask
-        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
         axs[0].imshow(rgb_image, cmap='gray' if index else None)
         axs[0].set_title('Index Image' if index else 'RGB Image')
         axs[0].axis('off')
