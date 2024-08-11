@@ -54,13 +54,13 @@ class CNN(nn.Module):
         self.model.eval()
         running_loss = 0.0
         num_classes = 5
-        L = len(test_loader)
+        L = len(test_loader.loader)
         accuracy_scores = np.zeros(num_classes)
         recall_scores = np.zeros(num_classes)
         precision_scores = np.zeros(num_classes)
         f1_scores = np.zeros(num_classes)
         with torch.no_grad():
-            for images, masks, class_counts in tqdm(test_loader, desc='Testing...', leave=False):
+            for images, masks, class_counts in tqdm(test_loader.loader, desc='Testing...', leave=False):
                 images, masks = images.to(device), masks.to(device)
                 class_counts = class_counts.to(device)
                 batch_weights = self.calculate_weights(class_counts.sum(dim=0))
@@ -83,6 +83,12 @@ class CNN(nn.Module):
             "test_precision":round(np.mean(precision_scores / L), 2),
             "test_f1":round(np.mean(f1_scores / L), 2)
         }
+
+    # def test(self, test_loader):
+    #     device = get_device()
+    #     optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+    #     self.model.to(device)
+    #     scores = self._validate_epoch(0, 1, val_loader.loader, device, thresholdmetric)
     
     def _train_epoch(self, epoch, num_epochs, train_loader, optimizer, device):
         self.model.train()
@@ -185,16 +191,13 @@ class CNN(nn.Module):
         print("Model and train_story saved")
         
     def unpickle(self, path):
-        state_dict = torch.load(path)
-        model_arch = self.model.state_dict().keys()
-        pickled_arch = state_dict.keys()
-
-        if model_arch != pickled_arch:
-            raise ValueError("The architecture of the model does not match the architecture of the pickled model.")
-
-        self.model.load_state_dict(state_dict)
-        self.model.eval()
-        print("model loaded")
+        # Load the dictionary from the specified path
+        save_dict = torch.load(path)
+        # Restore the model state_dict
+        self.model.load_state_dict(save_dict['model_state_dict'])
+        # Restore the train_story
+        self.train_story = save_dict['train_story']
+        print("Model and train_story loaded")
 
     def plot_training_history(self):
         # Extract data from the training history
