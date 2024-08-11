@@ -18,44 +18,48 @@ from Transforms import RandomBrightnessContrast, ChannelDropout
 import matplotlib.pyplot as plt
 from skimage import exposure
 
-        
+PALETTE = [
+    [0, 204, 242],
+    [230, 0, 77],
+    [204, 204, 204],
+    [100, 180, 50],
+    [180, 230, 77]
+]
+CLASS_NAMES = [
+    "Water",
+    "Urban",
+    "Bare soil",
+    "Forest",
+    "Grassland"
+]
 
 
 class LandcoverDataset(Dataset):
-    def __init__(self, img_path, mask_path, batch_size, n_random=None, transforms=None, indexes=None):
-        self.num_classes = 5
+    def __init__(self, img_path, mask_path, batch_size, n_random=None, transforms=None, indexes=None, n_classes=5):
+        self.num_classes = n_classes
         self.img_path = img_path
         self.mask_path = mask_path
-        self.file_names = [
-            f for f in os.listdir(img_path) if f.endswith('.tif')
-        ] if not n_random else sample([
-            f for f in os.listdir(img_path) if f.endswith('.tif')
-        ], n_random)
-        self.file_names = self._filter_by_size(self.file_names, img_path, (512, 512))
+        self.file_names = [f for f in os.listdir(img_path) if f.endswith('.tif') ]
+        if n_random:
+            self.file_names = sample(self._filter_by_size(self.file_names, img_path, (512, 512)), n_random)
+        else:
+            self.file_names = self._filter_by_size(self.file_names, img_path, (512, 512))
         
         self.indexes = indexes if indexes is not None else []
         self.spectral_indices = [SpectralIndex(index) for index in self.indexes]
         self.transforms = Compose([
             RandomVerticalFlip(p=0.5),
             RandomHorizontalFlip(p=0.5),
-            RandomBrightnessContrast(p=0.3),
-            ChannelDropout(channel_drop_range=(1, 3), fill_value=0, p=0.3)#, protect_last=len(self.indexes))
+            RandomBrightnessContrast(p=0.2),
+            ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.3) #, protect_last=len(self.indexes))
         ]) if transforms is None else transforms
         
-        # self.images = [self._load_and_preprocess_image(f) for f in tqdm(self.file_names, desc='Loading and preprocessing images')]
         with multiprocessing.Pool(processes=os.cpu_count()) as pool: # otherwise too slow
             self.images = list(tqdm(
                 pool.imap(self._load_and_preprocess_image, self.file_names),
                 total=len(self.file_names),
                 desc='Loading and preprocessing images'))
-        
         self.masks = [self._load_and_preprocess_mask(f) for f in tqdm(self.file_names, desc='Loading and preprocessing masks')]
-        # with multiprocessing.Pool(processes=os.cpu_count()) as pool:
-        #     self.masks = list(tqdm(
-        #         pool.imap(self._load_and_preprocess_mask, self.file_names),
-        #         total=len(self.file_names),
-        #         desc='Loading and preprocessing masks'))
-        
         self.loader = DataLoader(self, batch_size=batch_size, num_workers=os.cpu_count())
 
     def __len__(self):
@@ -108,7 +112,6 @@ class LandcoverDataset(Dataset):
         return normalized
 
     
-    
     def getinfo(self):
         num_images = len(self.images)
         img_shape = self.images[0].shape if num_images > 0 else "N/A"
@@ -130,15 +133,7 @@ class LandcoverDataset(Dataset):
             palette_array = np.array(palette)
             colored_mask = palette_array[mask]
             return colored_mask
-
-        PALETTE = [
-            [0, 204, 242],
-            [230, 0, 77],
-            [204, 204, 204],
-            [100, 180, 50],
-            [180, 230, 77]
-        ]
-        
+       
         image, mask, _ = self[n]
         image = image.cpu().numpy().transpose(1, 2, 0)
 
@@ -166,22 +161,6 @@ class LandcoverDataset(Dataset):
         plt.show()
         
     def plot_prediction(self, model, n, r=2, g=1, b=0, index=""):
-        PALETTE = [
-            [0, 204, 242],
-            [230, 0, 77],
-            [204, 204, 204],
-            [100, 180, 50],
-            [180, 230, 77]
-        ]
-        class_names = [
-            "Water",
-            "Urban",
-            "Bare soil",
-            "Forest",
-            "Grassland"
-        ]
-
-        # Apply the palette to the mask
         def apply_palette(mask, palette):
             palette_array = np.array(palette)
             return palette_array[mask]
@@ -239,7 +218,7 @@ class LandcoverDataset(Dataset):
         axs[3].set_ylabel('Accuracy Score')
         axs[3].set_title(f'Class Accuracy Scores, mean: {accuracy}')
         axs[3].set_xticks(range(num_classes))
-        axs[3].set_xticklabels(class_names)
+        axs[3].set_xticklabels(CLASS_NAMES)
 
         plt.subplots_adjust(wspace=0.1, hspace=0.1)
         plt.tight_layout()
