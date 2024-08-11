@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision
 torchvision.disable_beta_transforms_warning()
-from torchvision.transforms.v2 import Compose, GaussianBlur
+from torchvision.transforms.v2 import Compose, RandomVerticalFlip, RandomHorizontalFlip
 from Transforms import RandomBrightnessContrast, ChannelDropout
 import matplotlib.pyplot as plt
 from skimage import exposure
@@ -31,12 +31,15 @@ class LandcoverDataset(Dataset):
         ] if not n_random else sample([
             f for f in os.listdir(img_path) if f.endswith('.tif')
         ], n_random)
+        self.file_names = self._filter_by_size(self.file_names, img_path, (512, 512))
+        
         self.indexes = indexes if indexes is not None else []
         self.spectral_indices = [SpectralIndex(index) for index in self.indexes]
         self.transforms = Compose([
-            # GaussianBlur(3),
+            RandomVerticalFlip(p=0.5),
+            RandomHorizontalFlip(p=0.5),
             RandomBrightnessContrast(p=0.3),
-            ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.25, protect_last=len(self.indexes))
+            ChannelDropout(channel_drop_range=(1, 3), fill_value=0, p=0.3)#, protect_last=len(self.indexes))
         ]) if transforms is None else transforms
         
         # self.images = [self._load_and_preprocess_image(f) for f in tqdm(self.file_names, desc='Loading and preprocessing images')]
@@ -67,17 +70,17 @@ class LandcoverDataset(Dataset):
         return image.clone().detach(), torch.tensor(mask, dtype=torch.long), class_counts
     
 
-    def _weight_classes(self, noweights):
-        if noweights:
-            weight = np.ones(self.num_classes)
-        else:
-            all_labels = torch.cat([masks.view(-1) for _, masks in tqdm(self.loader, desc='Weighting classes')])
-            classes = torch.unique(all_labels)
-            class_counts = torch.bincount(all_labels)
-            class_frequencies = class_counts.float() / len(all_labels)
-            median_frequency = torch.median(class_frequencies)
-            weight = median_frequency / class_frequencies
-        return torch.FloatTensor(weight)
+    def _filter_by_size(self, file_names, img_path, target_size):
+        filtered_files = []
+        for filename in tqdm(file_names, desc='Filtering files with wrong dimensions:'):
+            try:
+                with tifffile.TiffFile(os.path.join(img_path, filename)) as tif:
+                    if tif.pages[0].shape[:2] == target_size:
+                        filtered_files.append(filename)
+            except Exception as e:
+                print(f"Error reading {filename}: {e}")
+                continue
+        return filtered_files
 
         
     def _load_and_preprocess_image(self, filename):
@@ -85,7 +88,6 @@ class LandcoverDataset(Dataset):
         image = self._normalize(image)
         image = np.moveaxis(image, -1, 0)  # Convert (H, W, C) to (C, H, W) for PyTorch
         
-        # Calculate and add spectral indices
         for si in self.spectral_indices:
             noise = np.random.normal(loc=0, scale=1e-8, size=image.shape)
             index_band = si.apply(image + noise)
@@ -96,7 +98,7 @@ class LandcoverDataset(Dataset):
 
     def _load_and_preprocess_mask(self, filename):
         mask = tifffile.imread(os.path.join(self.mask_path, filename))
-        return mask  # Directly return the class indices
+        return mask
 
     def _normalize(self, image):
         image = image.astype(np.float32)
@@ -184,7 +186,7 @@ class LandcoverDataset(Dataset):
             palette_array = np.array(palette)
             return palette_array[mask]
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = get_device()
         model.model.to(device)
         model.model.eval()
 
