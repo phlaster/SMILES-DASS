@@ -1,0 +1,30 @@
+{
+    "test_v": {
+        "test_loss": 0.326,
+        "test_accuracy": 0.532,
+        "test_recall": 0.532,
+        "test_precision": 0.403,
+        "test_f1": 0.306
+    },
+    "test_t": {
+        "test_loss": 0.326,
+        "test_accuracy": 0.485,
+        "test_recall": 0.485,
+        "test_precision": 0.342,
+        "test_f1": 0.313
+    },
+    "test_just": {
+        "test_loss": 0.324,
+        "test_accuracy": 0.474,
+        "test_recall": 0.474,
+        "test_precision": 0.344,
+        "test_f1": 0.273
+    },
+    "test_frozen_0x6": {
+        "test_loss": 0.32,
+        "test_accuracy": 0.497,
+        "test_recall": 0.497,
+        "test_precision": 0.353,
+        "test_f1": 0.316
+    }
+}
