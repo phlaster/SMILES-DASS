@@ -184,7 +184,6 @@ class LandcoverDataset(Dataset):
 
         colored_mask = apply_palette(mask_np, PALETTE)
 
-        # Predict the mask
         with torch.no_grad():
             image = image.unsqueeze(0).to(device)
             predicted = model.model(image)
