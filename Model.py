@@ -25,7 +25,15 @@ class CNN(nn.Module):
         weights = median_frequency / class_frequencies
         return weights
 
-    def train(self, train_loader, val_loader, num_epochs, learning_rate, thresholdmetric=0.6, gamma=2.0, alpha=0.5):
+    def train(self,
+        train_loader, val_loader,
+        num_epochs,
+        learning_rate,
+        thresholdmetric=0.6,
+        saving_name="model.torch",
+        gamma=2.0,
+        alpha=0.5
+    ):
         device = get_device()
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
@@ -33,7 +41,7 @@ class CNN(nn.Module):
 
         for epoch in range(num_epochs):
             train_loss = self._train_epoch(epoch, num_epochs, train_loader.loader, optimizer, device, gamma, alpha)
-            scores = self._validate_epoch(epoch, num_epochs, val_loader.loader, device, thresholdmetric, gamma, alpha)
+            scores = self._validate_epoch(epoch, num_epochs, val_loader.loader, device, thresholdmetric, saving_name, gamma, alpha)
 
             current_lr = optimizer.param_groups[0]['lr']
 
@@ -47,42 +55,6 @@ class CNN(nn.Module):
                 "val_f1": scores[4]
             })
             scheduler.step()
-    
-    def test(self, test_loader, gamma=2.0, alpha=0.5):  # Add gamma and alpha parameters
-        device = get_device()
-        self.model.to(device)
-        self.model.eval()
-        running_loss = 0.0
-        num_classes = 5
-        L = len(test_loader.loader)
-        accuracy_scores = np.zeros(num_classes)
-        recall_scores = np.zeros(num_classes)
-        precision_scores = np.zeros(num_classes)
-        f1_scores = np.zeros(num_classes)
-        with torch.no_grad():
-            for images, masks, class_counts in tqdm(test_loader.loader, desc='Testing...', leave=False):
-                images, masks = images.to(device), masks.to(device)
-                class_counts = class_counts.to(device)
-                batch_weights = self.calculate_weights(class_counts.sum(dim=0))
-                outputs = self.model(images)
-                loss = focal_loss(outputs, masks, gamma, alpha, batch_weights)
-                running_loss += loss.item()
-                _, predicted = torch.max(outputs, 1)
-                predicted_np = predicted.cpu().numpy()
-                masks_np = masks.cpu().numpy()
-                
-                accuracy_scores += metric_accuracy(masks_np, predicted_np, num_classes)
-                recall_scores += metric_recall(masks_np, predicted_np, num_classes)
-                precision_scores += metric_precision(masks_np, predicted_np, num_classes)
-                f1_scores += metric_f1(masks_np, predicted_np, num_classes)
-        return {
-            "test_loss":round(running_loss / L, 3),
-            "test_accuracy":round(np.mean(accuracy_scores / L), 3),
-            "test_recall":round(np.mean(recall_scores / L), 3),
-            "test_precision":round(np.mean(precision_scores / L), 3),
-            "test_f1":round(np.mean(f1_scores / L), 3)
-        }
-
     
     def _train_epoch(self, epoch, num_epochs, train_loader, optimizer, device, gamma, alpha):
         self.model.train()
@@ -103,7 +75,7 @@ class CNN(nn.Module):
         print(f'Epoch [{epoch+1}/{num_epochs}], Train loss: {epoch_loss}', end="")
         return epoch_loss
 
-    def _validate_epoch(self, epoch, num_epochs, val_loader, device, thresholdmetric, gamma, alpha):
+    def _validate_epoch(self, epoch, num_epochs, val_loader, device, thresholdmetric, saving_name, gamma, alpha):
         self.model.eval()
         running_loss = 0.0
         num_classes = 5
@@ -140,11 +112,47 @@ class CNN(nn.Module):
         meanmetric = round(np.mean([recall,precision]), 3)
         
         if meanmetric > thresholdmetric:
-            self.pickle(f"models/deep_CNN_epoch={epoch+1},mm={meanmetric}.torch")
+            self.pickle(saving_name)
             thresholdmetric = meanmetric + 0.01
         return val_loss, accuracy, recall, precision, f1
         
-            
+
+        
+    def test(self, test_loader, gamma=2.0, alpha=0.5):
+        device = get_device()
+        self.model.to(device)
+        self.model.eval()
+        running_loss = 0.0
+        num_classes = 5
+        L = len(test_loader.loader)
+        accuracy_scores = np.zeros(num_classes)
+        recall_scores = np.zeros(num_classes)
+        precision_scores = np.zeros(num_classes)
+        f1_scores = np.zeros(num_classes)
+        with torch.no_grad():
+            for images, masks, class_counts in tqdm(test_loader.loader, desc='Testing...', leave=False):
+                images, masks = images.to(device), masks.to(device)
+                class_counts = class_counts.to(device)
+                batch_weights = self.calculate_weights(class_counts.sum(dim=0))
+                outputs = self.model(images)
+                loss = focal_loss(outputs, masks, gamma, alpha, batch_weights)
+                running_loss += loss.item()
+                _, predicted = torch.max(outputs, 1)
+                predicted_np = predicted.cpu().numpy()
+                masks_np = masks.cpu().numpy()
+                
+                accuracy_scores += metric_accuracy(masks_np, predicted_np, num_classes)
+                recall_scores += metric_recall(masks_np, predicted_np, num_classes)
+                precision_scores += metric_precision(masks_np, predicted_np, num_classes)
+                f1_scores += metric_f1(masks_np, predicted_np, num_classes)
+        return {
+            "test_loss":round(running_loss / L, 3),
+            "test_accuracy":round(np.mean(accuracy_scores / L), 3),
+            "test_recall":round(np.mean(recall_scores / L), 3),
+            "test_precision":round(np.mean(precision_scores / L), 3),
+            "test_f1":round(np.mean(f1_scores / L), 3)
+        }
+ 
     def _preprocess_image(self, image_path, target_size=512):
         image = tifffile.imread(image_path)
         image = np.moveaxis(image, [0, 1, 2], [1, 2, 0])
