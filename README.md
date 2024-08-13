@@ -30,7 +30,7 @@ Unfortunately, we were asked not to share used dataset, but here are some intern
 ```
 
 ## [Satellite]((https://en.wikipedia.org/wiki/Sentinel-2A)) sensors
-|**N**          |0  |1  |2  |3  |4  | 5 | 6 | 7 | 8 | 9 |
+|**N**          |0  |1  |2  |3  |4  |5  |6  |7  |8  |9  |
 |---------------|---|---|---|---|---|---|---|---|---|---|
 |**Sentinel-2A**|B02|B03|B04|B05|B06|B07|B08|B8A|B11|B12|
 |**Standard**   |B  |G  |R  |RE1|RE2|RE3|N  |N2 |S1 |S2 |
@@ -40,14 +40,14 @@ Unfortunately, we were asked not to share used dataset, but here are some intern
 |-------------|----------|-----------|---------|------|---------|
 |**seg. mask**|Water     |Urban      |Bare soil|Forest|Grassland|
 
-## Used [specreal indicies]((https://github.com/awesome-spectral-indices/awesome-spectral-indices)):
-|short|long|type|formula|
-|-----|-------------------------------------------|----------|-----------------------------------------|
-|BI   |Bare Soil Index                            |soil      |((S1 + R) - (N + B))/((S1 + R) + (N + B))|
-|BNDVI|Blue Normalized Difference Vegetation Index|vegetation|(N - B)/(N + B)                          |
-|MGRVI|Modified Green Red Vegetation Index        |vegetation|(G **2 - R **2) / (G **2 + R **2)        |
-|NDCI |Normalized Difference Chlorophyll Index    |water     |(RE1 - R)/(RE1 + R)                      |
-|NLI  |Non-Linear Vegetation Index                |vegetation|((N ** 2) - R)/((N ** 2) + R)            |
+## Used [spectral indicies](https://github.com/awesome-spectral-indices/awesome-spectral-indices):
+|short|long                                       |type     |formula                         |
+|-----|-------------------------------------------|----------|-------------------------------|
+|BI   |Bare Soil Index                            |soil      |`((S1+R)-(N+B))/((S1+R)+(N+B))`|
+|BNDVI|Blue Normalized Difference Vegetation Index|vegetation|`(N-B)/(N+B)`                  |
+|MGRVI|Modified Green Red Vegetation Index        |vegetation|`(G**2-R**2)/(G**2+R**2)`      |
+|NDCI |Normalized Difference Chlorophyll Index    |water     |`(RE1-R)/(RE1+R)`              |
+|NLI  |Non-Linear Vegetation Index                |vegetation|`((N**2)-R)/((N**2)+R)`        |
 
 ## Files:
 ### Image specs:
@@ -72,26 +72,26 @@ Unique colors per band: [5]
 ```
 ### USA example
 <div style="text-align: center;">
-  <img src="assets/3.jpg" width="500" alt="Experiment results">
+  <img src="assets/3.jpg" width="500" alt="USA sample">
 </div>
 
 ### Russia example
 <div style="text-align: center;">
-  <img src="assets/4.jpg" width="500" alt="Experiment results">
+  <img src="assets/4.jpg" width="500" alt="Russia sample">
 </div>
 
 ## Experiment explanation:
-1. Pre train CNN on `USA` dataset, measure performance: __Validation__
-2. Measure performance on `Russia/test`: __Baseline__
-3. Randomly choose 1k shots from `Russia/train`
-4. Train 1 epoch, measure performance: __Just__
-5. Undo changes, freeze layers 0-6
-6. Train 1 epoch, measure performance: __Frozen6__
+1. Pre train CNN on `USA` dataset, measure performance: __Validation__;
+2. Measure performance on `Russia/test`: __Baseline__;
+3. Randomly choose 1k shots from `Russia/train`;
+4. Train 1 epoch, measure performance: __Just__;
+5. Undo changes, freeze layers 0-6;
+6. Train 1 epoch, measure performance: __Frozen6__.
 
 ## Experiment results (added error bars for artistic purpose)
 <div style="text-align: center;">
-  <img src="assets/2.png" alt="Experiment results">
+  <img src="assets/2.png" width="700" alt="Experiment results">
 </div>
 
 ## Disclaimer
-Performed experiment isn't actually a domain adaptation per se. But adding calculated Spectral Indicies (SI) as a sort of invariant properties of landcovers is indeed much closer to domain adaptation attempts. Further experiments are needed to compare model performance with and without added SI layers.
+Performed experiment isn't actually a domain adaptation _per se_. But adding calculated Spectral Indicies (SI) as a sort of invariant properties of landcovers is indeed much closer to domain adaptation attempts. Further experiments are needed to compare model performance with and without added SI layers.
