@@ -86,7 +86,7 @@ Unique colors per band: [5]
 3. Randomly choose 1k shots from `Russia/train`;
 4. Train 1 epoch, measure performance: __Just__;
 5. Undo changes, freeze layers 0-6;
-6. Train 1 epoch, measure performance: __Frozen6__.
+6. Train 1 epoch, measure performance: __Frozen 6__.
 
 ## Experiment results (added error bars for artistic purpose)
 <div style="text-align: center;">
