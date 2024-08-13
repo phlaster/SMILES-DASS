@@ -38,16 +38,16 @@ Unfortunately, we were asked not to share used dataset, but here are some intern
 ## Segmentation classes:
 |**N**        |0         |1          |2        |3     |4        |
 |-------------|----------|-----------|---------|------|---------|
-|**seg. mask**|open water|settlements|bair soil|forest|grassland|
+|**seg. mask**|Water     |Urban      |Bare soil|Forest|Grassland|
 
 ## Used [specreal indicies]((https://github.com/awesome-spectral-indices/awesome-spectral-indices)):
 |short|long|type|formula|
-|-|-|-|-|
-|BI|Bare Soil Index|soil|((S1 + R) - (N + B))/((S1 + R) + (N + B))|
-|BNDVI|Blue Normalized Difference Vegetation Index|vegetation|(N - B)/(N + B)|
-|MGRVI|Modified Green Red Vegetation Index|vegetation|(G ** 2.0 - R ** 2.0) / (G ** 2.0 + R ** 2.0)|
-|NDCI|Normalized Difference Chlorophyll Index|water|(RE1 - R)/(RE1 + R)|
-|NLI|Non-Linear Vegetation Index|vegetation|((N ** 2) - R)/((N ** 2) + R)|
+|-----|-------------------------------------------|----------|-----------------------------------------|
+|BI   |Bare Soil Index                            |soil      |((S1 + R) - (N + B))/((S1 + R) + (N + B))|
+|BNDVI|Blue Normalized Difference Vegetation Index|vegetation|(N - B)/(N + B)                          |
+|MGRVI|Modified Green Red Vegetation Index        |vegetation|(G **2 - R **2) / (G **2 + R **2)        |
+|NDCI |Normalized Difference Chlorophyll Index    |water     |(RE1 - R)/(RE1 + R)                      |
+|NLI  |Non-Linear Vegetation Index                |vegetation|((N ** 2) - R)/((N ** 2) + R)            |
 
 ## Files:
 ### Image specs:
