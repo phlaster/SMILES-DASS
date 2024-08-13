@@ -7,7 +7,7 @@ Team project at [Skoltech summer ML school](https://smiles.skoltech.ru/)
 
 
 ## Dataset structure
-Unfortunately, the dataset itself is under NDA
+Unfortunately, we were asked not to share used dataset, but here are some internals
 ```python
 ./datasets # 66G total
 ├── Russia
@@ -88,7 +88,10 @@ Unique colors per band: [5]
 5. Undo changes, freeze layers 0-6
 6. Train 1 epoch, measure performance: __Frozen6__
 
-## Experimant results (added error bars for artistic purpose)
+## Experiment results (added error bars for artistic purpose)
 <div style="text-align: center;">
   <img src="assets/2.png" alt="Experiment results">
 </div>
+
+## Disclaimer
+Performed experiment isn't actually a domain adaptation per se. But adding calculated Spectral Indicies (SI) as a sort of invariant properties of landcovers is indeed much closer to domain adaptation attempts. Further experiments are needed to compare model performance with and without added SI layers.
