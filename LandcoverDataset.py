@@ -84,7 +84,7 @@ class LandcoverDataset(Dataset):
         return normalized
 
     def _filter_by_size(self, filenames, img_path, dims, n_max=0):
-        assert 0<n_max, f"n_max can't be negative"
+        assert 0>=n_max, f"n_max can't be negative"
         if not n_max:
             n_max = len(filenames)
         filtered_files = []
