@@ -145,7 +145,8 @@ class LandcoverDataset(Dataset):
         print(f"Image Data Type: {img_dtype}")
         print(f"Mask Data Type: {mask_dtype}")
         print(f"Transformations: {self.transforms}")
-        print(f"Spectral Indices: \n\t{"\n\t".join([si.formula for si in self.spectral_indices])}")
+        print("Spectral Indices:\n\t", '\n\t'.join([si.formula for si in self.spectral_indices]))
+
 
     def plot_sample(self, n, r=2, g=1, b=0, index=""):
         def apply_palette(mask, palette):
