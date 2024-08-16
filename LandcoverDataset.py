@@ -13,8 +13,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision
 torchvision.disable_beta_transforms_warning()
-from torchvision.transforms.v2 import Compose, RandomVerticalFlip, RandomHorizontalFlip
-from Transforms import RandomBrightnessContrast, ChannelDropout
+from torchvision.transforms.v2 import Compose
+from Transforms import RandomBrightnessContrast, ChannelDropout, RandomVerticalFlipWithMask, RandomHorizontalFlipWithMask
 import matplotlib.pyplot as plt
 from skimage import exposure
 
@@ -55,9 +55,12 @@ class LandcoverDataset(Dataset):
             dims=images_dimensions
         )
         
-        self.transforms = Compose([
-            RandomVerticalFlip(p=0.5),
-            RandomHorizontalFlip(p=0.5),
+        self.spatial_transforms = Compose([
+            RandomVerticalFlipWithMask(p=0.5),
+            RandomHorizontalFlipWithMask(p=0.5),
+        ])
+
+        self.non_spatial_transforms = Compose([
             RandomBrightnessContrast(p=0.2),
             ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.3) #, protect_last=len(self.indexes))
         ]) if transforms is None else transforms
@@ -71,10 +74,14 @@ class LandcoverDataset(Dataset):
     def __getitem__(self, idx):
         image, mask = self.images[idx], self.masks[idx]
         image = torch.tensor(image, dtype=torch.float32)
-        if self.transforms:
-            image = self.transforms(image)
-        class_counts = torch.bincount(torch.tensor(mask).view(-1), minlength=self.num_classes)        
-        return image.clone().detach(), torch.tensor(mask, dtype=torch.long), class_counts
+        mask = torch.tensor(mask, dtype=torch.long)
+        
+        if self.non_spatial_transforms:
+            image, mask = self.spatial_transforms(image, mask)
+            image = self.non_spatial_transforms(image)
+        
+        class_counts = torch.bincount(mask.view(-1), minlength=self.num_classes)
+        return image.clone().detach(), mask, class_counts
 
     def _normalize(self, image):
         image = image.astype(np.float32)
@@ -84,7 +91,7 @@ class LandcoverDataset(Dataset):
         return normalized
 
     def _filter_by_size(self, filenames, img_path, dims, n_max=0):
-        assert 0>=n_max, f"n_max can't be negative"
+        assert 0<=n_max, f"n_max can't be negative"
         if not n_max:
             n_max = len(filenames)
         filtered_files = []
@@ -150,7 +157,7 @@ class LandcoverDataset(Dataset):
         print(f"Mask Shape: {mask_shape}")
         print(f"Image Data Type: {img_dtype}")
         print(f"Mask Data Type: {mask_dtype}")
-        print(f"Transformations: {self.transforms}")
+        print(f"Transformations: {self.non_spatial_transforms}")
         print("Spectral Indices:\n\t", '\n\t'.join([si.formula for si in self.spectral_indices]))
 
 

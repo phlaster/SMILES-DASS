@@ -1,5 +1,26 @@
 import numpy as np
 import torch
+from torchvision.transforms.v2 import RandomVerticalFlip, RandomHorizontalFlip
+
+class RandomVerticalFlipWithMask(RandomVerticalFlip):
+    def __init__(self, p=0.5):
+        super(RandomVerticalFlipWithMask, self).__init__(p=p)
+
+    def __call__(self, img, mask):
+        if torch.rand(1) < self.p:
+            img = torch.flip(img, dims=[1])
+            mask = torch.flip(mask, dims=[0])
+        return img, mask
+
+class RandomHorizontalFlipWithMask(RandomHorizontalFlip):
+    def __init__(self, p=0.5):
+        super(RandomHorizontalFlipWithMask, self).__init__(p=p)
+
+    def __call__(self, img, mask):
+        if torch.rand(1) < self.p:
+            img = torch.flip(img, dims=[2])
+            mask = torch.flip(mask, dims=[1])
+        return img, mask
 
 class RandomBrightnessContrast:
     def __init__(self, brightness_limit=0.2, contrast_limit=0.2, p=0.1):
