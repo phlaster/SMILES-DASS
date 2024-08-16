@@ -1,0 +1,16 @@
+name: smiles
+channels:
+- conda-forge
+- pytorch
+dependencies:
+- jupyterlab
+- matplotlib
+- numpy
+- python
+- pytorch
+- pytorch-cuda
+- scikit-image
+- tifffile
+- torchvision
+- tqdm
+
