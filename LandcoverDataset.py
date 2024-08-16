@@ -105,11 +105,17 @@ class LandcoverDataset(Dataset):
         image = self._normalize(image)
         image = np.moveaxis(image, -1, 0)  # Convert (H, W, C) to (C, H, W) for PyTorch
         
+        index_bands = []
+        
         for si in self.spectral_indices:
             noise = np.random.normal(loc=0, scale=1e-8, size=image.shape)
             index_band = si.apply(image + noise)
-            index_band = self._normalize(index_band[np.newaxis, ...])  # Add channel dimension and normalize
-            image = np.concatenate((image, index_band), axis=0)
+            index_bands.append(self._normalize(index_band[np.newaxis, ...]))  # Add channel dimension and normalize
+        
+        if index_bands:
+            index_bands = np.concatenate(index_bands, axis=0)
+            image = np.concatenate((image, index_bands), axis=0)
+        
         return image
 
     def _preprocess_images(self):
