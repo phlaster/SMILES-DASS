@@ -35,15 +35,15 @@ CLASS_NAMES = [
 
 
 class LandcoverDataset(Dataset):
-    def __init__(self, img_path, mask_path, batch_size, n_random=None, transforms=None, indexes=None, n_classes=5, images_dimensions=(512, 512, 10)):
+    def __init__(self, img_path, mask_path, batch_size, n_random=None, transforms=None, indexes=None, n_classes=5, images_dimensions=(512, 512, 10), cpu_cores=1):
         self.images_dimensions = images_dimensions
         self.num_classes = n_classes
         self.img_path = img_path
         self.mask_path = mask_path
         self.file_names = [f for f in os.listdir(img_path) if f.endswith('.tif') ]
         self.spectral_indices = [SpectralIndex(index) for index in indexes if indexes is not None]
-        self.loader = DataLoader(self, batch_size=batch_size, num_workers=os.cpu_count())
-
+        self.loader = DataLoader(self, batch_size=batch_size, num_workers=min(cpu_cores, os.cpu_count()))
+        
         self.file_names = self._filter_by_size(
             filenames=np.random.permutation(self.file_names),
             img_path=img_path,
