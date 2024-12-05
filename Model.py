@@ -36,7 +36,7 @@ class CNN(nn.Module):
     ):
         device = get_device()
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
         self.model.to(device)
 
         for epoch in range(num_epochs):
