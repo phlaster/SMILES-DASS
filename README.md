@@ -80,7 +80,9 @@ Unique colors per band: [5]
   <img src="assets/4.jpg" width="500" alt="Russia sample">
 </div>
 
-## Experiment explanation:
+## Experiments:
+
+### Experiment 1:
 1. Pre train CNN on `USA` dataset, measure performance: __Validation__;
 2. Measure performance on `Russia/test`: __Baseline__;
 3. Randomly choose 1k shots from `Russia/train`;
@@ -88,11 +90,19 @@ Unique colors per band: [5]
 5. Undo changes, freeze layers 0-6;
 6. Train 1 epoch, measure performance: __Frozen 6__.
 
-## Experiment results, averaged for 10 trials:
+Experiment results, averaged for 10 trials:
 <div style="text-align: center;">
-  <img src="assets/2.svg" alt="Experiment results">
+  <img src="assets/2.svg" alt="Experiment 1 results">
 </div>
 
-
-## Disclaimer
+```
 Performed experiment isn't actually a domain adaptation _per se_. But adding calculated Spectral Indicies (SI) as a sort of invariant properties of landcovers is indeed much closer to domain adaptation attempts. Further experiments are needed to compare model performance with and without added SI layers.
+```
+
+### Experiment 2:
+1. Pre train CNN-1 (no added spectral indexes bands) and CNN-2 (with added 5 spectral indexes bands) on `USA` (source domain), measure performance;
+2. Measure performance drop on `Russia/test` for both models;
+
+<div style="text-align: center;">
+  <img src="assets/results_2.png" alt="Experiment 2 results">
+</div>
