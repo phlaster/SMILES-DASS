@@ -187,7 +187,7 @@ class CNN(nn.Module):
         self.train_story = save_dict['train_story']
         print("Model and train_story loaded")
 
-    def plot_training_history(self):
+    def plot_training_history(self, figsize=(12, 12)):
         epochs = list(range(1, len(self.train_story) + 1))
         train_loss = [entry['train_loss'] for entry in self.train_story]
         val_loss = [entry['val_loss'] for entry in self.train_story]
@@ -197,7 +197,7 @@ class CNN(nn.Module):
         val_f1 = [np.mean(entry['val_f1']) for entry in self.train_story]
         learning_rate = [np.mean(entry['learn_rate']) for entry in self.train_story]
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12), sharex=True)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=figsize, sharex=True)
 
         # 1
         # ax1.plot(epochs, val_accuracy, label='Validation Accuracy', color='tab:green', linestyle='-', marker='o')
