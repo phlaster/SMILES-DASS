@@ -1,7 +1,6 @@
 import multiprocessing
-from functools import partial
 import os
-from random import choice, sample
+from random import choice
 
 from SpectralIndex import SpectralIndex
 from utils import *
@@ -40,7 +39,7 @@ class LandcoverDataset(Dataset):
         self.num_classes = n_classes
         self.img_path = img_path
         self.mask_path = mask_path
-        self.file_names = [f for f in os.listdir(img_path) if f.endswith('.tif') ]
+        self.file_names = [f for f in os.listdir(img_path) if f.endswith('.tif')]
         self.spectral_indices = [SpectralIndex(index) for index in indexes if indexes is not None]
         self.loader = DataLoader(self, batch_size=batch_size, num_workers=min(cpu_cores, os.cpu_count()))
         
@@ -62,17 +61,34 @@ class LandcoverDataset(Dataset):
 
         self.non_spatial_transforms = Compose([
             RandomBrightnessContrast(p=0.2),
-            ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.3) #, protect_last=len(self.indexes))
+            ChannelDropout(channel_drop_range=(1, 2), fill_value=0, p=0.3)
         ]) if transforms is None else transforms
-        
-        self.images = self._preprocess_images()
-        self.masks = self._preprocess_masks()
-        
-    def __len__(self):
-        return len(self.file_names)
 
+        self._cache = {}
+        self.cache_size = 100
+
+        print(f"Loaded {len(self)} items")
+    
+        
     def __getitem__(self, idx):
-        image, mask = self.images[idx], self.masks[idx]
+        filename = self.file_names[idx]
+        
+        # Check cache first
+        if filename in self._cache:
+            image, mask = self._cache[filename]
+        else:
+            # Load image and mask on demand
+            image = self._load_and_process_image(filename)
+            mask = self._load_mask(filename)
+            
+            # Cache the results
+            if len(self._cache) < self.cache_size:
+                self._cache[filename] = (image, mask)
+            elif self._cache:
+                # Remove oldest item if cache is full
+                self._cache.pop(next(iter(self._cache)))
+                self._cache[filename] = (image, mask)
+
         image = torch.tensor(image, dtype=torch.float32)
         mask = torch.tensor(mask, dtype=torch.long)
         
@@ -82,6 +98,35 @@ class LandcoverDataset(Dataset):
         
         class_counts = torch.bincount(mask.view(-1), minlength=self.num_classes)
         return image.clone().detach(), mask, class_counts
+
+    def _load_and_process_image(self, filename):
+        """Load and process a single image."""
+        image = tifffile.imread(os.path.join(self.img_path, filename))
+        image = self._normalize(image)
+        image = np.moveaxis(image, -1, 0)  # Convert (H, W, C) to (C, H, W)
+        
+        index_bands = []
+        for si in self.spectral_indices:
+            noise = np.random.normal(loc=0, scale=1e-8, size=image.shape)
+            index_band = si.apply(image + noise)
+            index_bands.append(self._normalize(index_band[np.newaxis, ...]))
+        
+        if index_bands:
+            index_bands = np.concatenate(index_bands, axis=0)
+            image = np.concatenate((image, index_bands), axis=0)
+        
+        return image
+
+    def _load_mask(self, filename):
+        """Load a single mask."""
+        return tifffile.imread(os.path.join(self.mask_path, filename))
+    
+    def clear_cache(self):
+        """Clear the image cache to free memory."""
+        self._cache.clear()
+        
+    def __len__(self):
+        return len(self.file_names)
 
     def _normalize(self, image):
         image = image.astype(np.float32)
@@ -125,40 +170,40 @@ class LandcoverDataset(Dataset):
         
         return image
 
-    def _preprocess_images(self):
-        with multiprocessing.Pool(processes=os.cpu_count()) as pool: # otherwise too slow
-            images = list(tqdm(
-                pool.imap(self._one_image, self.file_names),
-                desc='Loading images',
-                leave=False))
-        return images
-
-    def _preprocess_masks(self):
-        masks = [
-            tifffile.imread(os.path.join(self.mask_path, f))
-            for f in tqdm(self.file_names, desc='Loading masks', leave=False)
-        ]
-        return masks
 
     def set_batchsize(self, new_batchsize):
         assert new_batchsize > 0, "Enter positive batch size"
         self.loader = DataLoader(self, batch_size=new_batchsize, num_workers=os.cpu_count())
 
     def getinfo(self):
-        num_images = len(self.images)
-        img_shape = self.images[0].shape if num_images > 0 else "N/A"
-        mask_shape = self.masks[0].shape if num_images > 0 else "N/A"
-        img_dtype = self.images[0].dtype if num_images > 0 else "N/A"
-        mask_dtype = self.masks[0].dtype if num_images > 0 else "N/A"
+        """Print information about the dataset."""
+        num_images = len(self.file_names)
+        
+        # Load first image and mask only if dataset is not empty
+        if num_images > 0:
+            first_image = self._load_and_process_image(self.file_names[0])
+            first_mask = self._load_mask(self.file_names[0])
+            img_shape = first_image.shape
+            mask_shape = first_mask.shape
+            img_dtype = first_image.dtype
+            mask_dtype = first_mask.dtype
+        else:
+            img_shape = mask_shape = img_dtype = mask_dtype = "N/A"
 
-        print("Dataset Information:")
+        print("\nDataset Information:")
         print(f"Number of samples: {num_images}")
         print(f"Image Shape: {img_shape}")
         print(f"Mask Shape: {mask_shape}")
         print(f"Image Data Type: {img_dtype}")
         print(f"Mask Data Type: {mask_dtype}")
         print(f"Transformations: {self.non_spatial_transforms}")
-        print("Spectral Indices:\n\t", '\n\t'.join([si.formula for si in self.spectral_indices]))
+        print("Spectral Indices:")
+        if self.spectral_indices:
+            for si in self.spectral_indices:
+                print(f"\t{si.formula}")
+        else:
+            print("\tNone")
+        print(f"Cache size: {len(self._cache)}/{self.cache_size}")
 
 
     def plot_sample(self, n, r=2, g=1, b=0, index=""):
