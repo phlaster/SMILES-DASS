@@ -286,5 +286,33 @@
             "test_precision": 0.353,
             "test_f1": 0.345
         }
-    ]
+    ],
+    "test_no_DA_source": {
+        "test_loss": 0.289,
+        "test_accuracy": 0.575,
+        "test_recall": 0.575,
+        "test_precision": 0.457,
+        "test_f1": 0.365
+    },
+    "test_no_DA_target":{
+        "test_loss": 0.393,
+        "test_accuracy": 0.501,
+        "test_recall": 0.501,
+        "test_precision": 0.335,
+        "test_f1": 0.278
+    },
+    "test_DA_source":{
+        "test_loss": 0.248,
+        "test_accuracy": 0.573,
+        "test_recall": 0.573,
+        "test_precision": 0.469,
+        "test_f1": 0.39
+    },
+    "test_DA_target":{
+        "test_loss": 0.26,
+        "test_accuracy": 0.559,
+        "test_recall": 0.559,
+        "test_precision": 0.356,
+        "test_f1": 0.335
+    }
 }
